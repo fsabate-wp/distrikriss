@@ -24,7 +24,7 @@
     </div>
     <div class="footer-bottom">
       <div class="container">
-        <p>&copy; {{ currentYear }} DistriKriss. Todos los derechos reservados.</p>
+        <p>Desarrollado por <a href="https://fernandosabate.com" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.6); text-decoration: none; font-weight: 600;">fernandosabate.com</a></p>
       </div>
     </div>
   </footer>

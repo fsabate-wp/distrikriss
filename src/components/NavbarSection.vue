@@ -131,9 +131,10 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   background: none;
   border: none;
   cursor: pointer;
-  width: 30px;
-  height: 24px;
+  width: 32px;
+  height: 26px;
   position: relative;
+  z-index: 1010;
 }
 
 .navbar-toggle span,
@@ -157,6 +158,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 .navbar-toggle span::after {
   content: '';
   position: absolute;
+  left: 0;
 }
 
 .navbar-toggle span::before {
@@ -166,6 +168,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 .navbar-toggle span {
   position: absolute;
   top: 50%;
+  left: 0;
   transform: translateY(-50%);
 }
 
@@ -177,15 +180,21 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   background: transparent;
 }
 
+.navbar.scrolled .navbar-toggle span.open {
+  background: transparent;
+}
+
 .navbar-toggle span.open::before {
   top: 50%;
   transform: rotate(45deg);
+  background: var(--green-dark);
 }
 
 .navbar-toggle span.open::after {
   bottom: auto;
   top: 50%;
   transform: rotate(-45deg);
+  background: var(--green-dark);
 }
 
 @media (max-width: 768px) {
@@ -204,6 +213,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
     opacity: 0;
     pointer-events: none;
     transition: var(--transition);
+    z-index: 1005;
   }
 
   .navbar-links.open {
@@ -213,6 +223,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 
   .navbar-links a {
     font-size: 1.3rem;
+    color: var(--green-dark);
   }
 
   .btn-nav {

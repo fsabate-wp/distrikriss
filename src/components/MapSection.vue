@@ -5,7 +5,7 @@
       <p class="section-subtitle">Encuéntranos en Cdla. Guangala villa 24 Mz. E7</p>
       <div class="map-wrapper">
         <iframe
-          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3987.5!2d-79.9!3d-2.2!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMsKwMTInMDAuMCJTIDc5wrA1NCcwMC4wIlc!5e0!3m2!1ses!2sec!4v1"
+          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3987.5!2d-79.900772!3d-2.228329!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMsKwMTMnNDIuMCJTIDc5wrA1NCcwMi44Ilc!5e0!3m2!1ses!2sec!4v1"
           width="100%"
           height="450"
           style="border:0; border-radius: var(--radius);"
