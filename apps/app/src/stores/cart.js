@@ -4,7 +4,14 @@ const STORAGE_KEY = 'distrikriss-cart'
 
 function loadCart() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
+    return raw
+      .filter((i) => i && i.productId)
+      .map((i) => ({
+        ...i,
+        price: Number(i.price) || 0,
+        quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
+      }))
   } catch {
     return []
   }
@@ -35,11 +42,14 @@ export const useCartStore = defineStore('cart', {
           unit: product.unit,
           price: Number(product.price),
           imageUrl: product.imageUrl || null,
+          quantity,
         })
       }
       this.persist()
     },
     setQuantity(productId, quantity) {
+      quantity = Number(quantity)
+      if (!Number.isFinite(quantity)) return
       const item = this.items.find((i) => i.productId === productId)
       if (item) {
         if (quantity <= 0) this.remove(productId)
