@@ -24,6 +24,9 @@
         <a href="#productos" class="btn btn-outline btn-lg">
           Ver productos
         </a>
+        <a :href="appUrl + '/registro'" class="btn btn-primary btn-lg">
+          Pedir online
+        </a>
       </div>
     </div>
     <div class="hero-wave">
@@ -33,6 +36,10 @@
     </div>
   </section>
 </template>
+
+<script setup>
+const appUrl = import.meta.env.VITE_APP_URL || 'https://app.distrikriss.com'
+</script>
 
 <style scoped>
 .hero {

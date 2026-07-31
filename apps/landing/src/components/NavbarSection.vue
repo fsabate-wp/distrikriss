@@ -9,7 +9,14 @@
         <li><a href="#nosotros" @click="menuOpen = false">Por qué nosotros</a></li>
         <li><a href="#ubicacion" @click="menuOpen = false">Ubicación</a></li>
         <li><a href="#contacto" @click="menuOpen = false">Contacto</a></li>
+        <li class="navbar-cta-mobile"><a :href="appUrl + '/registro'" @click="menuOpen = false">Crear cuenta</a></li>
       </ul>
+      <a
+        :href="appUrl + '/registro'"
+        class="btn btn-primary btn-nav"
+      >
+        Pedir online
+      </a>
       <a
         href="https://wa.me/593959841957?text=Hola%20DistriKriss%2C%20me%20interesa%20hacer%20un%20pedido"
         class="btn btn-whatsapp btn-nav"
@@ -29,6 +36,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 
+const appUrl = import.meta.env.VITE_APP_URL || 'https://app.distrikriss.com'
 const scrolled = ref(false)
 const menuOpen = ref(false)
 
@@ -197,6 +205,10 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   background: var(--green-dark);
 }
 
+.navbar-cta-mobile {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .navbar-links {
     position: fixed;
@@ -214,6 +226,20 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
     pointer-events: none;
     transition: var(--transition);
     z-index: 1005;
+  }
+
+  .navbar-cta-mobile {
+    display: block;
+  }
+
+  .navbar-cta-mobile a {
+    display: inline-block;
+    background: var(--green-dark);
+    color: var(--white) !important;
+    padding: 12px 28px;
+    border-radius: 50px;
+    font-size: 1rem;
+    margin-top: 8px;
   }
 
   .navbar-links.open {

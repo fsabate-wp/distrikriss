@@ -1,0 +1,280 @@
+import { Router } from 'express'
+import { z } from 'zod'
+import { prisma } from '../lib/prisma.js'
+import { requireAuth } from '../middleware/auth.js'
+import {
+  getSettings,
+  deliveryCheck,
+  validateDeliveryDay,
+  slotAvailabilityFor,
+  parseLocalDate,
+} from '../lib/delivery.js'
+import { sendToAdmins, sendToUser } from '../lib/push.js'
+
+const router = Router()
+router.use(requireAuth)
+
+const inlineAddressSchema = z.object({
+  label: z.string().min(1).max(80),
+  street: z.string().min(2).max(200),
+  number: z.string().max(30).optional().or(z.literal('')),
+  reference: z.string().max(200).optional().or(z.literal('')),
+  city: z.string().min(2).max(120),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+})
+
+const orderSchema = z
+  .object({
+    addressId: z.string().optional().nullable(),
+    address: inlineAddressSchema.optional(),
+    deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    slotId: z.string().min(1),
+    paymentMethod: z.enum(['TRANSFER', 'COD']),
+    items: z
+      .array(
+        z.object({
+          productId: z.string(),
+          quantity: z.number().int().min(1).max(500),
+        }),
+      )
+      .min(1),
+    notes: z.string().max(500).optional().or(z.literal('')),
+  })
+  .refine((d) => d.addressId || d.address, { message: 'Se requiere una dirección' })
+
+const statusNotes = {
+  PENDING: 'Pedido recibido',
+  CONFIRMED: 'Pedido confirmado',
+  PREPARING: 'En preparación',
+  OUT_FOR_DELIVERY: 'En camino',
+  DELIVERED: 'Entregado',
+  CANCELLED: 'Pedido cancelado',
+}
+
+async function generateOrderCode() {
+  const count = await prisma.order.count()
+  return `DK-${String(count + 1).padStart(4, '0')}`
+}
+
+function withTotals(order) {
+  const toNumber = (v) => Number(v)
+  return {
+    ...order,
+    subtotal: toNumber(order.subtotal),
+    deliveryFee: toNumber(order.deliveryFee),
+    total: toNumber(order.total),
+    items: order.items?.map((i) => ({ ...i, price: toNumber(i.price) })),
+  }
+}
+
+const orderInclude = {
+  items: true,
+  events: { orderBy: { createdAt: 'desc' } },
+  address: true,
+}
+
+router.post('/', async (req, res, next) => {
+  try {
+    const data = orderSchema.parse(req.body)
+    const settings = await getSettings()
+
+    let address
+    if (data.addressId) {
+      address = await prisma.address.findFirst({
+        where: { id: data.addressId, userId: req.user.id },
+      })
+      if (!address) return res.status(404).json({ error: 'Dirección no encontrada' })
+    } else {
+      address = data.address
+    }
+
+    const check = await deliveryCheck(address.lat, address.lng)
+    if (!check.withinRadius) {
+      return res.status(400).json({
+        error: `La dirección está fuera del radio de entrega (${check.distanceKm} km)`,
+        code: 'OUT_OF_RANGE',
+      })
+    }
+
+    const deliveryDate = parseLocalDate(data.deliveryDate)
+    const dayCheck = validateDeliveryDay(deliveryDate, settings)
+    if (!dayCheck.ok) {
+      return res.status(400).json({ error: dayCheck.message, code: dayCheck.code })
+    }
+
+    const slots = await slotAvailabilityFor(deliveryDate, settings)
+    const slot = slots.find((s) => s.id === data.slotId)
+    if (!slot) {
+      return res.status(400).json({ error: 'Horario de entrega no válido', code: 'INVALID_SLOT' })
+    }
+    if (!slot.available) {
+      return res.status(400).json({ error: 'Ese horario ya está lleno', code: 'SLOT_FULL' })
+    }
+
+    const products = await prisma.product.findMany({
+      where: { id: { in: data.items.map((i) => i.productId) }, active: true },
+    })
+    const productMap = new Map(products.map((p) => [p.id, p]))
+    let subtotal = 0
+    const items = data.items.map((item) => {
+      const product = productMap.get(item.productId)
+      if (!product) throw Object.assign(new Error('Producto no disponible'), { status: 400 })
+      if (product.stock >= 0 && product.stock < item.quantity) {
+        throw Object.assign(new Error(`Stock insuficiente para "${product.name}"`), { status: 400 })
+      }
+      subtotal += Number(product.price) * item.quantity
+      return {
+        productId: product.id,
+        name: product.name,
+        unit: product.unit,
+        price: product.price,
+        quantity: item.quantity,
+      }
+    })
+
+    subtotal = Math.round(subtotal * 100) / 100
+    if (subtotal < Number(settings.minOrderAmount)) {
+      return res.status(400).json({
+        error: `El pedido mínimo es $${Number(settings.minOrderAmount).toFixed(2)}`,
+        code: 'MIN_ORDER',
+      })
+    }
+
+    const deliveryFee = check.deliveryFee
+    const total = Math.round((subtotal + deliveryFee) * 100) / 100
+    const code = await generateOrderCode()
+
+    const addressSnapshot = {
+      label: address.label,
+      street: address.street,
+      number: address.number,
+      reference: address.reference,
+      city: address.city,
+      lat: address.lat,
+      lng: address.lng,
+    }
+
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          code,
+          userId: req.user.id,
+          status: 'PENDING',
+          paymentMethod: data.paymentMethod,
+          paymentStatus: data.paymentMethod === 'COD' ? 'PENDING' : 'PENDING',
+          subtotal,
+          deliveryFee,
+          total,
+          deliveryDate,
+          slotId: slot.id,
+          slotLabel: slot.label,
+          addressId: data.addressId || null,
+          addressSnapshot,
+          notes: data.notes || null,
+          items: { create: items },
+          events: { create: { status: 'PENDING', note: statusNotes.PENDING } },
+        },
+        include: orderInclude,
+      })
+      for (const item of items) {
+        if (productMap.get(item.productId).stock >= 0) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+          })
+        }
+      }
+      return created
+    })
+
+    res.status(201).json({ order: withTotals(order) })
+
+    await sendToAdmins({
+      title: 'Nuevo pedido',
+      body: `${order.code} · $${order.total.toFixed(2)} · ${order.slotLabel}`,
+      url: `/admin/pedidos/${order.id}`,
+      tag: 'new-order',
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/', async (req, res, next) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: orderInclude,
+    })
+    res.json({ orders: orders.map(withTotals) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/:id', async (req, res, next) => {
+  try {
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.id, userId: req.user.id },
+      include: orderInclude,
+    })
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+    res.json({ order: withTotals(order) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/:id/cancel', async (req, res, next) => {
+  try {
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.id, userId: req.user.id },
+      include: { items: true },
+    })
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+    if (order.status !== 'PENDING' && order.status !== 'CONFIRMED') {
+      return res.status(400).json({ error: 'El pedido ya no puede cancelarse' })
+    }
+    const updated = await prisma.$transaction(async (tx) => {
+      const cancelled = await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED' },
+        include: orderInclude,
+      })
+      await tx.orderEvent.create({
+        data: { orderId: order.id, status: 'CANCELLED', note: statusNotes.CANCELLED },
+      })
+      for (const item of order.items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } })
+        if (product && product.stock >= 0) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          })
+        }
+      }
+      return cancelled
+    })
+    res.json({ order: withTotals(updated) })
+
+    await sendToUser(order.userId, {
+      title: `Pedido ${order.code}`,
+      body: 'Tu pedido fue cancelado',
+      url: `/pedidos/${order.id}`,
+      tag: `order-${order.id}`,
+    })
+    await sendToAdmins({
+      title: 'Pedido cancelado',
+      body: `${order.code} fue cancelado por el cliente`,
+      url: `/admin/pedidos/${order.id}`,
+      tag: `order-${order.id}`,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+export default router

@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  TRANSFER
+  COD
+}
+
+model User {
+  id           String            @id @default(cuid())
+  name         String
+  phone        String            @unique
+  email        String?           @unique
+  passwordHash String
+  role         Role              @default(CLIENT)
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  addresses    Address[]
+  orders       Order[]
+  pushSubs     PushSubscription[]
+}
+
+model Address {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  street    String
+  number    String?
+  reference String?
+  city      String
+  lat       Float
+  lng       Float
+  isDefault Boolean @default(false)
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  imageUrl  String?
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  unit        String
+  stock       Int      @default(-1)
+  imageUrl    String?
+  active      Boolean  @default(true)
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  paymentStatus   String        @default("PENDING")
+  subtotal        Decimal       @db.Decimal(10, 2)
+  deliveryFee     Decimal       @db.Decimal(10, 2) @default(0)
+  total           Decimal       @db.Decimal(10, 2)
+  deliveryDate    DateTime
+  slotId          String
+  slotLabel       String
+  addressId       String?
+  address         Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  addressSnapshot Json
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  items           OrderItem[]
+  events          OrderEvent[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name      String
+  unit      String
+  price     Decimal @db.Decimal(10, 2)
+  quantity  Int
+}
+
+model OrderEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+}
+
+model Settings {
+  id                Int     @id @default(1)
+  storeName         String  @default("DistriKriss")
+  currency          String  @default("USD")
+  phone             String  @default("")
+  whatsapp          String  @default("")
+  email             String  @default("")
+  storeAddress      String  @default("")
+  storeLat          Float
+  storeLng          Float
+  deliveryRadiusKm  Float   @default(5)
+  deliveryFeeBase   Decimal @default(0) @db.Decimal(10, 2)
+  deliveryFeePerKm  Decimal @default(0) @db.Decimal(10, 2)
+  minOrderAmount    Decimal @default(0) @db.Decimal(10, 2)
+  orderCutoff       String  @default("18:00")
+  deliveryDays      Json
+  openHours         Json
+  slots             Json
+  bankTransfer      Json
+  updatedAt         DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}

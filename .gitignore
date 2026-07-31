@@ -2,3 +2,16 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# uploads de imágenes (admin en runtime -> volumen)
+server/uploads
+server/public/imgs/prod-*
+
+# envs
+.env
+.env.*
+!.env.example
+
+# logs locales
+*.log
+
