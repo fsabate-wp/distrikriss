@@ -152,23 +152,36 @@ async function logout() {
 
 .navbar-toggle {
   display: none;
-  background: none;
-  border: none;
+  background: var(--gray-light);
+  border: 1.5px solid var(--gray-mid);
+  border-radius: 12px;
   cursor: pointer;
-  width: 32px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   position: relative;
+  transition: var(--transition);
+}
+
+.navbar-toggle:hover {
+  border-color: var(--green-light);
 }
 
 .navbar-toggle span,
 .navbar-toggle span::before,
 .navbar-toggle span::after {
   display: block;
-  width: 100%;
-  height: 3px;
+  width: 20px;
+  height: 2.5px;
   background: var(--green-dark);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: var(--transition);
+}
+
+.navbar-toggle span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .navbar-toggle span::before,
@@ -179,18 +192,11 @@ async function logout() {
 }
 
 .navbar-toggle span::before {
-  top: 0;
-}
-
-.navbar-toggle span {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%);
+  top: -7px;
 }
 
 .navbar-toggle span::after {
-  bottom: 0;
+  top: 7px;
 }
 
 .navbar-toggle span.open {
@@ -198,13 +204,12 @@ async function logout() {
 }
 
 .navbar-toggle span.open::before {
-  top: 50%;
+  top: 0;
   transform: rotate(45deg);
 }
 
 .navbar-toggle span.open::after {
-  bottom: auto;
-  top: 50%;
+  top: 0;
   transform: rotate(-45deg);
 }
 

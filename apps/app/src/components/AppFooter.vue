@@ -10,6 +10,11 @@
         <p>{{ settings.settings.phone }} · {{ settings.settings.whatsapp }}</p>
       </div>
     </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <p>Desarrollado por <a href="https://fernandosabate.com" target="_blank" rel="noopener">fernandosabate.com</a></p>
+      </div>
+    </div>
   </footer>
 </template>
 
@@ -50,5 +55,27 @@ const settings = useSettingsStore()
 .footer-info p {
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.6);
+}
+
+.footer-bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 32px;
+  padding-top: 20px;
+}
+
+.footer-bottom p {
+  text-align: center;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.footer-bottom a {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.footer-bottom a:hover {
+  color: white;
 }
 </style>
