@@ -10,6 +10,7 @@
         <div v-if="cart.items.length === 0" class="empty-state">
           <h3>Tu carrito está vacío</h3>
           <p>Agrega productos de la tienda</p>
+          <button class="btn btn-outline back-btn" @click="goHome">← Volver a la tienda</button>
         </div>
 
         <div v-else class="cart-items">
@@ -46,20 +47,28 @@
         <router-link v-else to="/checkout" class="btn btn-primary btn-block" @click="$emit('close')">
           Ir al checkout
         </router-link>
+        <button class="btn btn-outline btn-block back-btn" @click="goHome">← Volver a la tienda</button>
       </div>
     </aside>
   </div>
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart.js'
 import { useAuthStore } from '../stores/auth.js'
 import { money } from '../utils/format.js'
 
 defineProps({ open: Boolean })
-defineEmits(['close'])
+const emit = defineEmits(['close'])
 const cart = useCartStore()
 const auth = useAuthStore()
+const router = useRouter()
+
+function goHome() {
+  router.push({ name: 'home' })
+  emit('close')
+}
 </script>
 
 <style scoped>
@@ -242,5 +251,9 @@ const auth = useAuthStore()
 .cart-summary strong {
   font-size: 1.1rem;
   color: var(--green-dark);
+}
+
+.back-btn {
+  margin-top: 10px;
 }
 </style>

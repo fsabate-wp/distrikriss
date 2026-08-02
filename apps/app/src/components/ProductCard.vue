@@ -1,9 +1,10 @@
 <template>
-  <div class="product-card">
+  <div class="product-card" :class="{ 'is-featured': product.featured }">
     <router-link :to="`/producto/${product.slug}`" class="product-link">
       <div class="product-img">
         <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
         <span v-else class="product-fallback">{{ product.name[0] }}</span>
+        <span v-if="product.featured" class="featured-badge">★ Destacado</span>
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
@@ -39,6 +40,10 @@ function addToCart() {
   transition: var(--transition);
 }
 
+.product-card.is-featured {
+  border-color: var(--green-light);
+}
+
 .product-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
@@ -56,6 +61,20 @@ function addToCart() {
   justify-content: center;
   background: var(--gray-light);
   overflow: hidden;
+  position: relative;
+}
+
+.featured-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: var(--green-dark);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
 }
 
 .product-img img {

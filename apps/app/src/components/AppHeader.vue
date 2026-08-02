@@ -75,7 +75,7 @@ async function logout() {
 }
 
 .brand-distri {
-  color: var(--green-dark);
+  color: var(--dark);
 }
 
 .brand-kriss {
@@ -92,7 +92,7 @@ async function logout() {
 .link-btn {
   font-weight: 600;
   font-size: 0.92rem;
-  color: var(--green-dark);
+  color: var(--dark);
   transition: var(--transition);
   background: none;
   border: none;
@@ -127,7 +127,7 @@ async function logout() {
   position: relative;
   background: none;
   border: none;
-  color: var(--green-dark);
+  color: var(--dark);
   display: flex;
   align-items: center;
   padding: 6px;
@@ -172,7 +172,7 @@ async function logout() {
   display: block;
   width: 20px;
   height: 2.5px;
-  background: var(--green-dark);
+  background: var(--dark);
   border-radius: 3px;
   transition: var(--transition);
 }

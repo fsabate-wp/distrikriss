@@ -322,6 +322,7 @@ const productSchema = z.object({
   stock: z.number().int().min(-1).optional(),
   imageUrl: z.string().max(500).optional().or(z.literal('')),
   active: z.boolean().optional(),
+  featured: z.boolean().optional(),
   categoryId: z.string().optional().nullable(),
 })
 
@@ -343,6 +344,7 @@ router.post('/products', async (req, res, next) => {
         stock: data.stock ?? -1,
         imageUrl: data.imageUrl || null,
         active: data.active ?? true,
+        featured: data.featured ?? false,
         categoryId: data.categoryId || null,
       },
       include: { category: { select: { id: true, name: true } } },
@@ -369,6 +371,7 @@ router.put('/products/:id', async (req, res, next) => {
         ...(data.stock !== undefined && { stock: data.stock }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl || null }),
         ...(data.active !== undefined && { active: data.active }),
+        ...(data.featured !== undefined && { featured: data.featured }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId || null }),
       },
       include: { category: { select: { id: true, name: true } } },

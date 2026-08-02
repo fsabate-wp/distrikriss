@@ -27,8 +27,9 @@ router.get('/categories', async (req, res, next) => {
 
 router.get('/products', async (req, res, next) => {
   try {
-    const { category, search, sort, limit = 60 } = req.query
+    const { category, search, sort, limit = 60, featured } = req.query
     const where = { active: true }
+    if (featured === 'true') where.featured = true
     if (category) {
       const cat = await prisma.category.findUnique({ where: { slug: String(category) } })
       where.categoryId = cat?.id ?? 'none'

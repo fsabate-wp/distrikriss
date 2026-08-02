@@ -5,6 +5,7 @@ export const useCatalogStore = defineStore('catalog', {
   state: () => ({
     categories: [],
     products: [],
+    featured: [],
     loading: false,
     category: null,
     search: '',
@@ -17,6 +18,14 @@ export const useCatalogStore = defineStore('catalog', {
         this.categories = data.categories
       } catch {
         this.categories = []
+      }
+    },
+    async loadFeatured() {
+      try {
+        const data = await api.get('/api/catalog/products', { featured: 'true', limit: 12 })
+        this.featured = data.products
+      } catch {
+        this.featured = []
       }
     },
     async loadProducts(params = {}) {
@@ -36,6 +45,7 @@ export const useCatalogStore = defineStore('catalog', {
     },
     async refresh() {
       await this.loadCategories()
+      await this.loadFeatured()
       await this.loadProducts()
     },
   },

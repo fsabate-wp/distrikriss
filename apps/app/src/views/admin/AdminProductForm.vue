@@ -36,6 +36,13 @@
             <option :value="false">Inactivo</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Destacado</label>
+          <label class="toggle-row">
+            <input type="checkbox" v-model="form.featured" />
+            <span>Mostrar en "Destacados" del inicio</span>
+          </label>
+        </div>
       </div>
 
       <div class="form-group">
@@ -81,7 +88,7 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 
-const form = ref({ name: '', unit: '', price: 0, stock: -1, categoryId: null, active: true, description: '', imageUrl: '' })
+const form = ref({ name: '', unit: '', price: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '' })
 const categories = ref([])
 const error = ref('')
 const saving = ref(false)
@@ -107,6 +114,7 @@ async function load() {
         stock: p.stock,
         categoryId: p.categoryId,
         active: p.active,
+        featured: p.featured,
         description: p.description || '',
         imageUrl: p.imageUrl || '',
       }
@@ -216,6 +224,21 @@ onMounted(load)
 .file-btn {
   position: relative;
   cursor: pointer;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding-top: 6px;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green-dark);
 }
 
 .actions {

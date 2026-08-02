@@ -78,6 +78,7 @@ model Product {
   stock       Int      @default(-1)
   imageUrl    String?
   active      Boolean  @default(true)
+  featured    Boolean  @default(false)
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())

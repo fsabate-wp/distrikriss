@@ -45,9 +45,12 @@
               <span v-else :class="{ 'low-stock': p.stock <= 5 }">{{ p.stock }}</span>
             </td>
             <td>
-              <span class="badge" :class="p.active ? 'badge-delivered' : 'badge-cancelled'">
-                {{ p.active ? 'Activo' : 'Inactivo' }}
-              </span>
+              <div class="state-cell">
+                <span class="badge" :class="p.active ? 'badge-delivered' : 'badge-cancelled'">
+                  {{ p.active ? 'Activo' : 'Inactivo' }}
+                </span>
+                <span v-if="p.featured" class="badge badge-featured">★ Destacado</span>
+              </div>
             </td>
             <td class="actions-cell">
               <router-link :to="`/admin/productos/${p.id}`" class="action-link">Editar</router-link>
@@ -160,6 +163,17 @@ onMounted(load)
 .low-stock {
   color: var(--red);
   font-weight: 700;
+}
+
+.state-cell {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge-featured {
+  background: #ffff00;
+  color: #5a4a00;
 }
 
 .actions-cell {

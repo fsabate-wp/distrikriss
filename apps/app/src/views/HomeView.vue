@@ -23,6 +23,19 @@
         </select>
       </div>
 
+      <section v-if="catalog.featured.length" class="featured">
+        <div class="featured-head">
+          <h2 class="featured-title">Destacados</h2>
+          <div class="featured-nav">
+            <button class="carousel-btn" @click="scrollCarousel(-1)" aria-label="Anterior">‹</button>
+            <button class="carousel-btn" @click="scrollCarousel(1)" aria-label="Siguiente">›</button>
+          </div>
+        </div>
+        <div ref="carouselEl" class="carousel-track">
+          <ProductCard v-for="p in catalog.featured" :key="p.id" :product="p" />
+        </div>
+      </section>
+
       <div class="category-chips">
         <button class="chip" :class="{ active: catalog.category === null }" @click="setCategory(null)">Todos</button>
         <button
@@ -51,7 +64,7 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useCatalogStore } from '../stores/catalog.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { money } from '../utils/format.js'
@@ -59,6 +72,7 @@ import ProductCard from '../components/ProductCard.vue'
 
 const catalog = useCatalogStore()
 const settings = useSettingsStore()
+const carouselEl = ref(null)
 
 let searchTimer = null
 function onSearch() {
@@ -69,6 +83,14 @@ function onSearch() {
 function setCategory(slug) {
   catalog.category = slug
   catalog.loadProducts()
+}
+
+function scrollCarousel(dir) {
+  const el = carouselEl.value
+  if (!el) return
+  const card = el.querySelector('.product-card')
+  const step = (card ? card.offsetWidth + 20 : 260) * dir
+  el.scrollBy({ left: step, behavior: 'smooth' })
 }
 
 onMounted(() => {
@@ -135,6 +157,67 @@ onMounted(() => {
 .sort-select {
   width: auto;
   min-width: 190px;
+}
+
+.featured {
+  margin: 28px 0 4px;
+}
+
+.featured-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.featured-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--green-dark);
+}
+
+.featured-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.carousel-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gray-mid);
+  background: white;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--green-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.carousel-btn:hover {
+  background: var(--green-dark);
+  color: white;
+  border-color: var(--green-dark);
+}
+
+.carousel-track {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 10px;
+  scrollbar-width: none;
+}
+
+.carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-track .product-card {
+  flex: 0 0 260px;
+  scroll-snap-align: start;
 }
 
 .category-chips {
