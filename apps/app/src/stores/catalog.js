@@ -39,6 +39,8 @@ export const useCatalogStore = defineStore('catalog', {
         }
         const data = await api.get('/api/catalog/products', query)
         this.products = data.products
+      } catch {
+        this.products = []
       } finally {
         this.loading = false
       }

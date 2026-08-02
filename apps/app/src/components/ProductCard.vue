@@ -12,7 +12,7 @@
         <p class="product-price">{{ money(product.price) }}</p>
       </div>
     </router-link>
-    <button class="add-btn" @click="addToCart" aria-label="Agregar al carrito">
+    <button class="add-btn" :disabled="storeClosed()" @click="addToCart" aria-label="Agregar al carrito">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     </button>
   </div>
@@ -20,12 +20,17 @@
 
 <script setup>
 import { useCartStore } from '../stores/cart.js'
+import { useSettingsStore } from '../stores/settings.js'
 import { money } from '../utils/format.js'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const cart = useCartStore()
+const settings = useSettingsStore()
+
+const storeClosed = () => settings.settings ? settings.settings.storeOpen === false : false
 
 function addToCart() {
+  if (storeClosed()) return
   cart.add(props.product, 1)
 }
 </script>
@@ -68,10 +73,10 @@ function addToCart() {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: var(--green-dark);
-  color: white;
+  background: #ffd400;
+  color: #5a4a00;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 800;
   padding: 4px 10px;
   border-radius: 50px;
   box-shadow: var(--shadow);
@@ -133,5 +138,12 @@ function addToCart() {
 .add-btn:hover {
   background: var(--green-light);
   transform: scale(1.08);
+}
+
+.add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 </style>

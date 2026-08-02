@@ -72,6 +72,10 @@ async function submit() {
 </script>
 
 <style scoped>
+.auth-page .section-title {
+  color: var(--dark);
+}
+
 .auth-page {
   display: flex;
   align-items: flex-start;

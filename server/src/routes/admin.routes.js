@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendToUser } from '../lib/push.js'
-import { uploadImage } from '../middleware/upload.js'
+import { uploadImage, uploadBrand } from '../middleware/upload.js'
 import { config } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
 
@@ -496,6 +496,9 @@ router.get('/settings', async (req, res, next) => {
 const settingsSchema = z.object({
   storeName: z.string().min(1).max(80),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  storeOpen: z.boolean(),
+  faviconUrl: z.string().max(500).optional().or(z.literal('')),
+  appIconUrl: z.string().max(500).optional().or(z.literal('')),
   currency: z.string().min(1).max(10),
   phone: z.string().max(40),
   whatsapp: z.string().max(40),
@@ -539,6 +542,14 @@ router.put('/settings', async (req, res, next) => {
 /* ---------------- Uploads ---------------- */
 
 router.post('/uploads', uploadImage.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió ninguna imagen' })
+  res.json({
+    url: `${config.publicApiUrl}/uploads/imgs/${req.file.filename}`,
+    relative: `/uploads/imgs/${req.file.filename}`,
+  })
+})
+
+router.post('/uploads/brand', uploadBrand.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibió ninguna imagen' })
   res.json({
     url: `${config.publicApiUrl}/uploads/imgs/${req.file.filename}`,

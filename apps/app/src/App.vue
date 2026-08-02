@@ -1,6 +1,9 @@
 <template>
   <div class="app">
     <AppHeader @open-cart="cartOpen = true" />
+    <div v-if="settings.settings && settings.settings.storeOpen === false" class="closed-banner">
+      La tienda está temporalmente cerrada. Vuelve más tarde.
+    </div>
     <main>
       <router-view />
     </main>
@@ -20,21 +23,32 @@ import { useAuthStore } from './stores/auth.js'
 import { useSettingsStore } from './stores/settings.js'
 import { registerPush, unregisterPush } from './lib/push.js'
 import { applyAccentColor } from './lib/accent.js'
+import { applyBranding } from './lib/branding.js'
 
 const cartOpen = ref(false)
 const auth = useAuthStore()
 const settings = useSettingsStore()
 
+function applyVisuals() {
+  applyAccentColor(settings.settings?.accentColor)
+  applyBranding(settings.settings)
+}
+
 onMounted(async () => {
   if (!auth.initialized) await auth.fetchMe()
   await settings.load()
-  applyAccentColor(settings.settings?.accentColor)
+  applyVisuals()
   if (auth.isAuthed) registerPush()
 })
 
 watch(
   () => settings.settings?.accentColor,
-  (hex) => applyAccentColor(hex),
+  () => applyVisuals(),
+)
+
+watch(
+  () => [settings.settings?.faviconUrl, settings.settings?.appIconUrl],
+  () => applyVisuals(),
 )
 
 watch(
@@ -45,3 +59,14 @@ watch(
   },
 )
 </script>
+
+<style>
+.closed-banner {
+  background: #ffd400;
+  color: #5a4a00;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 10px 16px;
+}
+</style>

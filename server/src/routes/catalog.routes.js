@@ -4,6 +4,20 @@ import { config } from '../config.js'
 
 const router = Router()
 
+async function requireStoreOpen(req, res, next) {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (settings && settings.storeOpen === false) {
+      return res.status(400).json({ error: 'La tienda está temporalmente cerrada', code: 'STORE_CLOSED' })
+    }
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
+router.use(requireStoreOpen)
+
 const withImageUrl = (item) => {
   const out = { ...item }
   if (out.imageUrl && out.imageUrl.startsWith('/')) {

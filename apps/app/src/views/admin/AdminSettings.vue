@@ -14,6 +14,20 @@
 
     <form v-else @submit.prevent="save">
       <div class="admin-card">
+        <h2>Estado de la tienda</h2>
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" v-model="form.storeOpen" />
+            <span class="switch-slider"></span>
+          </label>
+          <div class="switch-text">
+            <strong>{{ form.storeOpen ? 'Tienda abierta' : 'Tienda pausada' }}</strong>
+            <p class="muted">Al pausar la tienda, los clientes no verán productos ni podrán hacer pedidos.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-card">
         <h2>Información de la tienda</h2>
         <div class="form-grid">
           <div class="form-group"><label>Nombre</label><input v-model="form.storeName" class="form-control" required /></div>
@@ -37,6 +51,44 @@
             <button type="button" class="btn btn-outline btn-sm" @click="form.accentColor = '#1B5E20'">Restablecer</button>
           </div>
           <p class="muted color-help">Este color se usa en botones, enlaces y acentos de toda la tienda. Se aplica automáticamente.</p>
+        </div>
+
+        <div class="form-group">
+          <label>Icono de la app (PWA)</label>
+          <div class="image-row">
+            <div class="image-preview">
+              <img v-if="form.appIconUrl" :src="absolute(form.appIconUrl)" alt="Icono de la app" />
+              <span v-else class="preview-fallback">I</span>
+            </div>
+            <div class="image-actions">
+              <label class="btn btn-outline btn-sm file-btn">
+                Subir imagen
+                <input type="file" accept="image/*" hidden @change="uploadBrand('appIconUrl', $event)" />
+              </label>
+              <button v-if="form.appIconUrl" type="button" class="btn btn-danger btn-sm" @click="form.appIconUrl = ''">Quitar</button>
+              <p v-if="brandUploading === 'appIconUrl'" class="muted">Subiendo…</p>
+            </div>
+          </div>
+          <p class="muted color-help">PNG con transparencia, cuadrado. Recomendado 512x512 (también 192x192). Deja ~20% de margen en los bordes para el formato maskable.</p>
+        </div>
+
+        <div class="form-group">
+          <label>Favicon</label>
+          <div class="image-row">
+            <div class="image-preview">
+              <img v-if="form.faviconUrl" :src="absolute(form.faviconUrl)" alt="Favicon" />
+              <span v-else class="preview-fallback">F</span>
+            </div>
+            <div class="image-actions">
+              <label class="btn btn-outline btn-sm file-btn">
+                Subir imagen
+                <input type="file" accept="image/*" hidden @change="uploadBrand('faviconUrl', $event)" />
+              </label>
+              <button v-if="form.faviconUrl" type="button" class="btn btn-danger btn-sm" @click="form.faviconUrl = ''">Quitar</button>
+              <p v-if="brandUploading === 'faviconUrl'" class="muted">Subiendo…</p>
+            </div>
+          </div>
+          <p class="muted color-help">PNG, SVG o ICO. Recomendado 192x192 (o 16x16/32x32/48x48). Se usa en pestañas, marcadores y la home de iOS.</p>
         </div>
       </div>
 
@@ -112,6 +164,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
 import { applyAccentColor } from '../../lib/accent.js'
+import { useSettingsStore } from '../../stores/settings.js'
 
 const form = ref(null)
 const openHoursArr = ref([])
@@ -119,13 +172,21 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const saved = ref(false)
+const brandUploading = ref(null)
+const settingsStore = useSettingsStore()
 const dayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const absolute = (u) => (u ? (u.startsWith('/') ? API_URL + u : u) : null)
 
 async function load() {
   try {
     const data = await api.get('/api/admin/settings')
     form.value = JSON.parse(JSON.stringify(data.settings))
     form.value.accentColor = form.value.accentColor || '#1B5E20'
+    form.value.storeOpen = form.value.storeOpen !== false
+    form.value.faviconUrl = form.value.faviconUrl || ''
+    form.value.appIconUrl = form.value.appIconUrl || ''
     openHoursArr.value = [0, 1, 2, 3, 4, 5, 6].map((d) => form.value.openHours[d] || { open: '07:00', close: '18:00', closed: false })
   } catch (err) {
     error.value = err.message
@@ -147,6 +208,29 @@ function addSlot() {
   form.value.slots.push({ id: `slot-${Date.now()}`, label: 'Nuevo horario', start: '08:00', end: '12:00', capacity: 20 })
 }
 
+async function uploadBrand(field, e) {
+  const file = e.target.files[0]
+  if (!file) return
+  brandUploading.value = field
+  try {
+    const fd = new FormData()
+    fd.append('image', file)
+    const res = await fetch(`${API_URL}/api/admin/uploads/brand`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error)
+    form.value[field] = data.relative
+  } catch (err) {
+    alert(err.message)
+  } finally {
+    brandUploading.value = null
+    e.target.value = ''
+  }
+}
+
 async function save() {
   error.value = ''
   saved.value = false
@@ -156,6 +240,14 @@ async function save() {
     openHoursArr.value.forEach((h, d) => (openHours[d] = { ...h }))
     await api.put('/api/admin/settings', { ...form.value, openHours })
     applyAccentColor(form.value.accentColor)
+    settingsStore.settings = {
+      ...(settingsStore.settings || {}),
+      storeName: form.value.storeName,
+      accentColor: form.value.accentColor,
+      storeOpen: form.value.storeOpen,
+      faviconUrl: form.value.faviconUrl,
+      appIconUrl: form.value.appIconUrl,
+    }
     saved.value = true
     setTimeout(() => (saved.value = false), 2500)
   } catch (err) {
@@ -172,11 +264,119 @@ onMounted(load)
 .admin-title {
   font-size: 1.6rem;
   font-weight: 800;
-  color: var(--green-dark);
+  color: var(--dark);
+}
+
+.admin-card h2 {
+  color: var(--dark);
 }
 
 .admin-sub {
   margin-bottom: 0;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.switch-text {
+  flex: 1;
+}
+
+.switch-text strong {
+  color: var(--dark);
+}
+
+.switch-text p {
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--gray-mid);
+  border-radius: 50px;
+  transition: var(--transition);
+}
+
+.switch-slider::before {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: 3px;
+  top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: var(--transition);
+  box-shadow: var(--shadow);
+}
+
+.switch input:checked + .switch-slider {
+  background: var(--green-dark);
+}
+
+.switch input:checked + .switch-slider::before {
+  transform: translateX(24px);
+}
+
+.image-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.image-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--gray-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-fallback {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--green-light);
+}
+
+.image-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.file-btn {
+  position: relative;
+  cursor: pointer;
 }
 
 .color-row {

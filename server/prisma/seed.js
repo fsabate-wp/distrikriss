@@ -53,6 +53,9 @@ const products = [
 const settings = {
   storeName: 'DistriKriss',
   accentColor: '#1B5E20',
+  storeOpen: true,
+  faviconUrl: '',
+  appIconUrl: '',
   currency: 'USD',
   phone: '095 984 1957',
   whatsapp: '593959841957',

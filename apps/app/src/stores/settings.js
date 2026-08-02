@@ -9,6 +9,9 @@ export const useSettingsStore = defineStore('settings', {
     storeLocation: (s) =>
       s.settings ? { lat: s.settings.storeLat, lng: s.settings.storeLng } : null,
     deliveryRadiusKm: (s) => s.settings?.deliveryRadiusKm || 0,
+    storeOpen: (s) => (s.settings ? s.settings.storeOpen !== false : true),
+    faviconUrl: (s) => s.settings?.faviconUrl || '',
+    appIconUrl: (s) => s.settings?.appIconUrl || '',
   },
   actions: {
     async load() {

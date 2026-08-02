@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Settings" ADD COLUMN "storeOpen" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "Settings" ADD COLUMN "faviconUrl" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Settings" ADD COLUMN "appIconUrl" TEXT NOT NULL DEFAULT '';

@@ -78,6 +78,9 @@ router.post('/', async (req, res, next) => {
   try {
     const data = orderSchema.parse(req.body)
     const settings = await getSettings()
+    if (settings.storeOpen === false) {
+      return res.status(400).json({ error: 'La tienda está temporalmente cerrada', code: 'STORE_CLOSED' })
+    }
 
     let address
     if (data.addressId) {
