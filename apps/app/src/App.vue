@@ -19,6 +19,7 @@ import InstallBanner from './components/InstallBanner.vue'
 import { useAuthStore } from './stores/auth.js'
 import { useSettingsStore } from './stores/settings.js'
 import { registerPush, unregisterPush } from './lib/push.js'
+import { applyAccentColor } from './lib/accent.js'
 
 const cartOpen = ref(false)
 const auth = useAuthStore()
@@ -27,8 +28,14 @@ const settings = useSettingsStore()
 onMounted(async () => {
   if (!auth.initialized) await auth.fetchMe()
   await settings.load()
+  applyAccentColor(settings.settings?.accentColor)
   if (auth.isAuthed) registerPush()
 })
+
+watch(
+  () => settings.settings?.accentColor,
+  (hex) => applyAccentColor(hex),
+)
 
 watch(
   () => auth.user,

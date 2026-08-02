@@ -492,6 +492,7 @@ router.get('/settings', async (req, res, next) => {
 
 const settingsSchema = z.object({
   storeName: z.string().min(1).max(80),
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   currency: z.string().min(1).max(10),
   phone: z.string().max(40),
   whatsapp: z.string().max(40),

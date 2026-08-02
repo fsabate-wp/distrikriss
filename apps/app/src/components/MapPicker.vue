@@ -54,6 +54,10 @@ let geocodeTimer = null
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org'
 
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
 function storeCoords() {
   return {
     lat: settings.storeLocation?.lat || -2.228329,
@@ -72,13 +76,15 @@ function customIcon(color = '#E53935') {
 
 function setupMarkers() {
   const { lat, lng } = storeCoords()
-  storeMarker = L.marker([lat, lng], { icon: customIcon('#1B5E20') }).addTo(map)
+  const storeColor = cssVar('--green-dark', '#1B5E20')
+  const lightColor = cssVar('--green-light', '#4CAF50')
+  storeMarker = L.marker([lat, lng], { icon: customIcon(storeColor) }).addTo(map)
   storeMarker.bindTooltip('DistriKriss', { permanent: false })
 
   storeCircle = L.circle([lat, lng], {
     radius: (settings.deliveryRadiusKm || 5) * 1000,
-    color: '#4CAF50',
-    fillColor: '#4CAF50',
+    color: lightColor,
+    fillColor: lightColor,
     fillOpacity: 0.08,
     weight: 1.5,
     dashArray: '6 6',

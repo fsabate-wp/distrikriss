@@ -5,6 +5,7 @@ const router = Router()
 
 const PUBLIC_FIELDS = {
   storeName: true,
+  accentColor: true,
   currency: true,
   phone: true,
   whatsapp: true,

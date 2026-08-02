@@ -28,6 +28,19 @@
       </div>
 
       <div class="admin-card">
+        <h2>Apariencia</h2>
+        <div class="form-group">
+          <label>Color destacado de la tienda</label>
+          <div class="color-row">
+            <input type="color" v-model="form.accentColor" class="color-input" />
+            <input v-model="form.accentColor" class="form-control color-hex" maxlength="7" />
+            <button type="button" class="btn btn-outline btn-sm" @click="form.accentColor = '#1B5E20'">Restablecer</button>
+          </div>
+          <p class="muted color-help">Este color se usa en botones, enlaces y acentos de toda la tienda. Se aplica automáticamente.</p>
+        </div>
+      </div>
+
+      <div class="admin-card">
         <h2>Entregas y envío</h2>
         <div class="form-grid">
           <div class="form-group"><label>Radio de entrega (km)</label><input v-model.number="form.deliveryRadiusKm" type="number" step="0.5" min="0" class="form-control" /></div>
@@ -98,6 +111,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
+import { applyAccentColor } from '../../lib/accent.js'
 
 const form = ref(null)
 const openHoursArr = ref([])
@@ -111,6 +125,7 @@ async function load() {
   try {
     const data = await api.get('/api/admin/settings')
     form.value = JSON.parse(JSON.stringify(data.settings))
+    form.value.accentColor = form.value.accentColor || '#1B5E20'
     openHoursArr.value = [0, 1, 2, 3, 4, 5, 6].map((d) => form.value.openHours[d] || { open: '07:00', close: '18:00', closed: false })
   } catch (err) {
     error.value = err.message
@@ -140,6 +155,7 @@ async function save() {
     const openHours = {}
     openHoursArr.value.forEach((h, d) => (openHours[d] = { ...h }))
     await api.put('/api/admin/settings', { ...form.value, openHours })
+    applyAccentColor(form.value.accentColor)
     saved.value = true
     setTimeout(() => (saved.value = false), 2500)
   } catch (err) {
@@ -161,6 +177,32 @@ onMounted(load)
 
 .admin-sub {
   margin-bottom: 0;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-input {
+  width: 52px;
+  height: 42px;
+  padding: 0;
+  border: 1.5px solid var(--gray-mid);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.color-hex {
+  max-width: 140px;
+  text-transform: uppercase;
+}
+
+.color-help {
+  font-size: 0.8rem;
+  margin-top: 8px;
 }
 
 .form-grid {
