@@ -21,4 +21,11 @@ export const config = {
     password: process.env.ADMIN_PASSWORD || 'distrikriss-admin',
     phone: process.env.ADMIN_PHONE || '0959841957',
   },
+  whatsapp: {
+    enabled: process.env.WHATSAPP_ENABLED === 'true',
+    baseUrl: process.env.WHATSAPP_BASE_URL || '',
+    apiKey: process.env.WHATSAPP_API_KEY || '',
+    sessionId: process.env.WHATSAPP_SESSION_ID || '',
+    countryCode: process.env.WHATSAPP_COUNTRY_CODE || '593',
+  },
 }

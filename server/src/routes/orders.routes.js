@@ -10,6 +10,7 @@ import {
   parseLocalDate,
 } from '../lib/delivery.js'
 import { sendToAdmins, sendToUser } from '../lib/push.js'
+import { sendWhatsApp, getStorePhone } from '../lib/whatsapp.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -203,6 +204,14 @@ router.post('/', async (req, res, next) => {
       url: `/admin/pedidos/${order.id}`,
       tag: 'new-order',
     })
+
+    const storePhone = await getStorePhone()
+    if (storePhone) {
+      await sendWhatsApp({
+        to: storePhone,
+        text: `Nuevo pedido ${order.code}\nTotal: $${order.total.toFixed(2)}\nEntrega: ${order.slotLabel}\nCliente: ${req.user?.name || ''} · ${req.user?.phone || ''}`,
+      })
+    }
   } catch (err) {
     next(err)
   }
@@ -279,6 +288,20 @@ router.post('/:id/cancel', async (req, res, next) => {
       url: `/admin/pedidos/${order.id}`,
       tag: `order-${order.id}`,
     })
+
+    const storePhone = await getStorePhone()
+    if (storePhone) {
+      await sendWhatsApp({
+        to: storePhone,
+        text: `Pedido ${order.code} fue cancelado por el cliente (${req.user?.name || ''})`,
+      })
+    }
+    if (req.user?.phone) {
+      await sendWhatsApp({
+        to: req.user.phone,
+        text: `Hola ${req.user.name || ''}, tu pedido ${order.code} fue cancelado. Si necesitas ayuda, escríbenos por este chat.`,
+      })
+    }
   } catch (err) {
     next(err)
   }

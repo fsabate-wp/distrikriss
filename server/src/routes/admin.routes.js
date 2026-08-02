@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendToUser } from '../lib/push.js'
+import { sendWhatsApp } from '../lib/whatsapp.js'
 import { uploadImage, uploadBrand } from '../middleware/upload.js'
 import { config } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
@@ -223,6 +224,12 @@ router.patch('/orders/:id/status', async (req, res, next) => {
         url: `/pedidos/${order.id}`,
         tag: `order-${order.id}`,
       })
+      if (updated.user?.phone) {
+        await sendWhatsApp({
+          to: updated.user.phone,
+          text: `Hola ${updated.user.name || ''}, ${message.toLowerCase()} (${updated.code}). Si tienes dudas, responde este mensaje.`,
+        })
+      }
     }
   } catch (err) {
     next(err)
