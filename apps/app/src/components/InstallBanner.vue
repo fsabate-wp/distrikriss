@@ -63,7 +63,6 @@ onMounted(() => {
   })
 
   window.addEventListener('appinstalled', () => {
-    storeDismissed()
     visible.value = false
   })
 
@@ -75,7 +74,6 @@ async function install() {
   deferredPrompt.value.prompt()
   await deferredPrompt.value.userChoice
   deferredPrompt.value = null
-  storeDismissed()
   visible.value = false
 }
 

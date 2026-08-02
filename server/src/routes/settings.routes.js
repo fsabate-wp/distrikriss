@@ -54,16 +54,19 @@ router.get('/manifest', async (req, res, next) => {
           { src: iconUrl, sizes: '192x192', type: 'image/png' },
         ]
       : []
+    const appOrigin = config.appUrl.replace(/\/$/, '')
     res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8')
     res.json({
       name,
       short_name: name,
       description: 'Pide online con entrega programada',
+      id: `${appOrigin}/`,
+      start_url: `${appOrigin}/`,
+      scope: `${appOrigin}/`,
       theme_color: '#ff0000',
       background_color: '#ff0000',
       display: 'standalone',
       orientation: 'portrait',
-      start_url: '/',
       lang: 'es',
       icons,
     })
