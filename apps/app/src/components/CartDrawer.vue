@@ -117,7 +117,7 @@ function goHome() {
 
 .drawer-header h3 {
   font-size: 1.15rem;
-  color: var(--green-dark);
+  color: var(--dark);
 }
 
 .close-btn {

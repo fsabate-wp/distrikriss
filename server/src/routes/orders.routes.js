@@ -15,8 +15,8 @@ const router = Router()
 router.use(requireAuth)
 
 const inlineAddressSchema = z.object({
-  label: z.string().min(1).max(80),
-  street: z.string().min(2).max(200),
+  label: z.string().max(80).optional().or(z.literal('')),
+  street: z.string().min(1).max(200),
   number: z.string().max(30).optional().or(z.literal('')),
   reference: z.string().max(200).optional().or(z.literal('')),
   city: z.string().min(2).max(120),
@@ -86,7 +86,11 @@ router.post('/', async (req, res, next) => {
       })
       if (!address) return res.status(404).json({ error: 'Dirección no encontrada' })
     } else {
-      address = data.address
+      address = {
+        ...data.address,
+        label: data.address.label || data.address.street || 'Dirección',
+        street: data.address.street || 'Dirección',
+      }
     }
 
     const check = await deliveryCheck(address.lat, address.lng)

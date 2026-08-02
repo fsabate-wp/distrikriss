@@ -226,7 +226,10 @@ async function submit() {
     if (addressMode.value === 'existing') {
       body = { addressId: selectedAddressId.value }
     } else {
-      body = { address: newAddress.value }
+      const addr = { ...newAddress.value }
+      if (!addr.label) addr.label = addr.street || 'Casa'
+      if (!addr.street) addr.street = 'Dirección'
+      body = { address: addr }
     }
     body.deliveryDate = delivery.value.date
     body.slotId = delivery.value.slotId
@@ -252,6 +255,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.checkout-page .section-title {
+  color: var(--dark);
+}
+
 .checkout-layout {
   display: grid;
   grid-template-columns: 1fr 380px;
@@ -271,7 +278,7 @@ onMounted(async () => {
 .checkout-summary h2 {
   font-size: 1.05rem;
   font-weight: 800;
-  color: var(--green-dark);
+  color: var(--dark);
   margin-bottom: 16px;
 }
 
