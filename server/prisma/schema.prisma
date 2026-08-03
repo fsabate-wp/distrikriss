@@ -79,6 +79,7 @@ model Product {
   imageUrl    String?
   active      Boolean  @default(true)
   featured    Boolean  @default(false)
+  discount    Int      @default(0)
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
@@ -135,6 +136,7 @@ model Settings {
   id                Int     @id @default(1)
   storeName         String  @default("DistriKriss")
   accentColor       String  @default("#1B5E20")
+  secondaryColor    String  @default("#1B5E20")
   storeOpen         Boolean @default(true)
   faviconUrl        String  @default("")
   appIconUrl        String  @default("")

@@ -18,6 +18,10 @@
           <input v-model.number="form.price" type="number" step="0.01" min="0" class="form-control" required />
         </div>
         <div class="form-group">
+          <label>Descuento (%)</label>
+          <input v-model.number="form.discount" type="number" step="1" min="0" max="100" class="form-control" />
+        </div>
+        <div class="form-group">
           <label>Stock</label>
           <input v-model.number="form.stock" type="number" class="form-control" />
           <small class="muted">-1 = sin límite</small>
@@ -88,7 +92,7 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 
-const form = ref({ name: '', unit: '', price: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '' })
+const form = ref({ name: '', unit: '', price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '' })
 const categories = ref([])
 const error = ref('')
 const saving = ref(false)
@@ -111,6 +115,7 @@ async function load() {
         name: p.name,
         unit: p.unit,
         price: Number(p.price),
+        discount: Number(p.discount) || 0,
         stock: p.stock,
         categoryId: p.categoryId,
         active: p.active,

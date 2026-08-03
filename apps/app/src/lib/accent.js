@@ -43,3 +43,19 @@ export function applyAccentColor(hex) {
   root.style.setProperty('--green-light', palette.light)
   root.style.setProperty('--green-accent', palette.accent)
 }
+
+export function secondaryPalette(hex) {
+  const base = hexToRgb(hex || '#1B5E20')
+  return {
+    base: toHex(base),
+    light: toHex(mix(base, WHITE, 0.45)),
+  }
+}
+
+export function applySecondaryColor(hex) {
+  if (!hex) return
+  const palette = secondaryPalette(hex)
+  const root = document.documentElement
+  root.style.setProperty('--secondary', palette.base)
+  root.style.setProperty('--secondary-light', palette.light)
+}

@@ -48,7 +48,8 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 function isActive(prefix) {
-  return route.path === '/admin' ? prefix === '' : route.path.startsWith(`/admin/${prefix}`)
+  if (!prefix) return route.path === '/admin'
+  return route.path.startsWith(`/admin/${prefix}`)
 }
 </script>
 

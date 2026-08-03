@@ -23,6 +23,7 @@ import { useAuthStore } from './stores/auth.js'
 import { useSettingsStore } from './stores/settings.js'
 import { registerPush, unregisterPush } from './lib/push.js'
 import { applyAccentColor } from './lib/accent.js'
+import { applySecondaryColor } from './lib/accent.js'
 import { applyBranding } from './lib/branding.js'
 
 const cartOpen = ref(false)
@@ -31,6 +32,7 @@ const settings = useSettingsStore()
 
 function applyVisuals() {
   applyAccentColor(settings.settings?.accentColor)
+  applySecondaryColor(settings.settings?.secondaryColor)
   applyBranding(settings.settings)
 }
 
@@ -42,7 +44,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => settings.settings?.accentColor,
+  () => [settings.settings?.accentColor, settings.settings?.secondaryColor],
   () => applyVisuals(),
 )
 

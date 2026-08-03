@@ -54,6 +54,16 @@
         </div>
 
         <div class="form-group">
+          <label>Color secundario</label>
+          <div class="color-row">
+            <input type="color" v-model="form.secondaryColor" class="color-input" />
+            <input v-model="form.secondaryColor" class="form-control color-hex" maxlength="7" />
+            <button type="button" class="btn btn-outline btn-sm" @click="form.secondaryColor = '#1B5E20'">Restablecer</button>
+          </div>
+          <p class="muted color-help">Color de acento para elementos específicos, como el botón de agregar al carrito.</p>
+        </div>
+
+        <div class="form-group">
           <label>Icono de la app (PWA)</label>
           <div class="image-row">
             <div class="image-preview">
@@ -164,6 +174,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
 import { applyAccentColor } from '../../lib/accent.js'
+import { applySecondaryColor } from '../../lib/accent.js'
 import { useSettingsStore } from '../../stores/settings.js'
 
 const form = ref(null)
@@ -184,6 +195,7 @@ async function load() {
     const data = await api.get('/api/admin/settings')
     form.value = JSON.parse(JSON.stringify(data.settings))
     form.value.accentColor = form.value.accentColor || '#1B5E20'
+    form.value.secondaryColor = form.value.secondaryColor || '#1B5E20'
     form.value.storeOpen = form.value.storeOpen !== false
     form.value.faviconUrl = form.value.faviconUrl || ''
     form.value.appIconUrl = form.value.appIconUrl || ''
@@ -240,10 +252,12 @@ async function save() {
     openHoursArr.value.forEach((h, d) => (openHours[d] = { ...h }))
     await api.put('/api/admin/settings', { ...form.value, openHours })
     applyAccentColor(form.value.accentColor)
+    applySecondaryColor(form.value.secondaryColor)
     settingsStore.settings = {
       ...(settingsStore.settings || {}),
       storeName: form.value.storeName,
       accentColor: form.value.accentColor,
+      secondaryColor: form.value.secondaryColor,
       storeOpen: form.value.storeOpen,
       faviconUrl: form.value.faviconUrl,
       appIconUrl: form.value.appIconUrl,

@@ -54,7 +54,7 @@
         </div>
       </div>
 
-      <div class="admin-card">
+      <div class="admin-card hide-mobile">
         <h2>Productos más vendidos</h2>
         <table class="admin-table">
           <thead>
@@ -221,6 +221,17 @@ onMounted(async () => {
 
   .dash-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dash-grid,
+  .hide-mobile {
+    display: none;
   }
 }
 </style>

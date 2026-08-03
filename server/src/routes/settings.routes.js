@@ -7,6 +7,7 @@ const router = Router()
 const PUBLIC_FIELDS = {
   storeName: true,
   accentColor: true,
+  secondaryColor: true,
   storeOpen: true,
   faviconUrl: true,
   appIconUrl: true,

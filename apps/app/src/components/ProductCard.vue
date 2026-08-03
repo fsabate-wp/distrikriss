@@ -5,11 +5,15 @@
         <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
         <span v-else class="product-fallback">{{ product.name[0] }}</span>
         <span v-if="product.featured" class="featured-badge">★ Destacado</span>
+        <span v-if="hasDiscount" class="discount-badge">{{ discount }}%</span>
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
         <p class="product-unit">{{ product.unit }}</p>
-        <p class="product-price">{{ money(product.price) }}</p>
+        <div class="product-price-row">
+          <p class="product-price">{{ money(finalPrice) }}</p>
+          <p v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</p>
+        </div>
       </div>
     </router-link>
     <button class="add-btn" :disabled="storeClosed()" @click="addToCart" aria-label="Agregar al carrito">
@@ -19,13 +23,18 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useCartStore } from '../stores/cart.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money } from '../utils/format.js'
+import { money, discountedPrice } from '../utils/format.js'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const cart = useCartStore()
 const settings = useSettingsStore()
+
+const discount = computed(() => Number(props.product.discount) || 0)
+const hasDiscount = computed(() => discount.value > 0 && discount.value < 100)
+const finalPrice = computed(() => discountedPrice(props.product.price, props.product.discount))
 
 const storeClosed = () => settings.settings ? settings.settings.storeOpen === false : false
 
@@ -82,6 +91,23 @@ function addToCart() {
   box-shadow: var(--shadow);
 }
 
+.discount-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--red);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow);
+}
+
 .product-img img {
   width: 100%;
   height: 100%;
@@ -118,6 +144,19 @@ function addToCart() {
   color: var(--green-dark);
 }
 
+.product-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.product-old-price {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray);
+  text-decoration: line-through;
+}
+
 .add-btn {
   position: absolute;
   bottom: 16px;
@@ -126,7 +165,7 @@ function addToCart() {
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: var(--green-dark);
+  background: var(--secondary);
   color: white;
   display: flex;
   align-items: center;
@@ -136,7 +175,7 @@ function addToCart() {
 }
 
 .add-btn:hover {
-  background: var(--green-light);
+  background: var(--secondary-light);
   transform: scale(1.08);
 }
 

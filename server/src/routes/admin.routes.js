@@ -330,6 +330,7 @@ const productSchema = z.object({
   imageUrl: z.string().max(500).optional().or(z.literal('')),
   active: z.boolean().optional(),
   featured: z.boolean().optional(),
+  discount: z.number().int().min(0).max(100).optional(),
   categoryId: z.string().optional().nullable(),
 })
 
@@ -352,6 +353,7 @@ router.post('/products', async (req, res, next) => {
         imageUrl: data.imageUrl || null,
         active: data.active ?? true,
         featured: data.featured ?? false,
+        discount: data.discount ?? 0,
         categoryId: data.categoryId || null,
       },
       include: { category: { select: { id: true, name: true } } },
@@ -379,6 +381,7 @@ router.put('/products/:id', async (req, res, next) => {
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl || null }),
         ...(data.active !== undefined && { active: data.active }),
         ...(data.featured !== undefined && { featured: data.featured }),
+        ...(data.discount !== undefined && { discount: data.discount }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId || null }),
       },
       include: { category: { select: { id: true, name: true } } },
@@ -503,6 +506,7 @@ router.get('/settings', async (req, res, next) => {
 const settingsSchema = z.object({
   storeName: z.string().min(1).max(80),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   storeOpen: z.boolean(),
   faviconUrl: z.string().max(500).optional().or(z.literal('')),
   appIconUrl: z.string().max(500).optional().or(z.literal('')),

@@ -14,7 +14,11 @@
           <h1>{{ product.name }}</h1>
           <p class="product-unit">Presentación: {{ product.unit }}</p>
           <p v-if="product.description" class="product-desc">{{ product.description }}</p>
-          <p class="product-price">{{ money(product.price) }}</p>
+          <p class="product-price">
+            {{ money(finalPrice) }}
+            <span v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</span>
+            <span v-if="product.discount && product.discount < 100" class="product-discount">{{ product.discount }}%</span>
+          </p>
 
           <div class="purchase-row">
             <div class="qty-box">
@@ -22,7 +26,7 @@
               <input v-model.number="qty" type="number" min="1" />
               <button @click="qty += 1">+</button>
             </div>
-            <button class="btn btn-primary" @click="add">Agregar al carrito</button>
+            <button class="btn btn-secondary" @click="add">Agregar al carrito</button>
           </div>
           <p v-if="added" class="added-note">✓ Agregado al carrito</p>
         </div>
@@ -36,11 +40,11 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
-import { money } from '../utils/format.js'
+import { money, discountedPrice } from '../utils/format.js'
 
 const route = useRoute()
 const cart = useCartStore()
@@ -48,6 +52,9 @@ const product = ref(null)
 const loading = ref(true)
 const qty = ref(1)
 const added = ref(false)
+
+const finalPrice = computed(() => discountedPrice(product.value?.price, product.value?.discount))
+const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number(product.value?.discount) < 100)
 
 async function load() {
   loading.value = true
@@ -134,6 +141,26 @@ onMounted(load)
   font-weight: 900;
   color: var(--green-dark);
   margin-bottom: 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.product-old-price {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--gray);
+  text-decoration: line-through;
+}
+
+.product-discount {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: white;
+  background: var(--red);
+  padding: 4px 12px;
+  border-radius: 50px;
 }
 
 .purchase-row {

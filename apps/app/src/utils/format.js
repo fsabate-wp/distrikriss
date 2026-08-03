@@ -2,6 +2,13 @@ export function money(value) {
   return `$${Number(value || 0).toFixed(2)}`
 }
 
+export function discountedPrice(price, discount) {
+  const d = Number(discount) || 0
+  if (d >= 100) return 0
+  if (d <= 0) return Number(price || 0)
+  return Math.round(Number(price || 0) * (1 - d / 100) * 100) / 100
+}
+
 export function formatDate(dateStr) {
   const d = new Date(dateStr)
   return d.toLocaleDateString('es-EC', {

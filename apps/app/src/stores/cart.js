@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { discountedPrice } from '../utils/format.js'
 
 const STORAGE_KEY = 'distrikriss-cart'
 
@@ -40,7 +41,7 @@ export const useCartStore = defineStore('cart', {
           productId: product.id,
           name: product.name,
           unit: product.unit,
-          price: Number(product.price),
+          price: discountedPrice(product.price, product.discount),
           imageUrl: product.imageUrl || null,
           quantity,
         })
