@@ -15,3 +15,6 @@ server/public/imgs/prod-*
 # logs locales
 *.log
 
+# certificados digitales (firma electrónica SRI) - nunca subir
+server/certificates/
+

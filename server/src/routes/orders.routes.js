@@ -11,6 +11,8 @@ import {
 } from '../lib/delivery.js'
 import { sendToAdmins, sendToUser } from '../lib/push.js'
 import { sendWhatsApp, getStorePhone } from '../lib/whatsapp.js'
+import { validateIdentifier } from '../lib/sri/ruc.js'
+import { issueInvoice } from '../lib/sri/index.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -24,6 +26,26 @@ const inlineAddressSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
 })
+
+const billingSchema = z
+  .object({
+    type: z.enum(['CONSUMO_FINAL', 'FACTURA']).optional().default('CONSUMO_FINAL'),
+    idType: z.enum(['RUC', 'CEDULA']).optional().default('RUC'),
+    id: z.string().max(13).optional().or(z.literal('')),
+    name: z.string().max(160).optional().or(z.literal('')),
+    address: z.string().max(200).optional().or(z.literal('')),
+    email: z.string().max(120).optional().or(z.literal('')),
+  })
+  .refine(
+    (b) =>
+      b.type !== 'FACTURA' ||
+      (b.id && validateIdentifier(b.id, b.idType || 'RUC')),
+    { message: 'El RUC o cédula ingresado no es válido', path: ['id'] },
+  )
+  .refine((b) => b.type !== 'FACTURA' || (b.name && b.name.trim().length >= 2), {
+    message: 'Ingresa la razón social o nombre del comprador',
+    path: ['name'],
+  })
 
 const orderSchema = z
   .object({
@@ -41,6 +63,7 @@ const orderSchema = z
       )
       .min(1),
     notes: z.string().max(500).optional().or(z.literal('')),
+    billing: billingSchema.optional(),
   })
   .refine((d) => d.addressId || d.address, { message: 'Se requiere una dirección' })
 
@@ -73,6 +96,7 @@ const orderInclude = {
   items: true,
   events: { orderBy: { createdAt: 'desc' } },
   address: true,
+  invoice: true,
 }
 
 router.post('/', async (req, res, next) => {
@@ -132,12 +156,14 @@ router.post('/', async (req, res, next) => {
         throw Object.assign(new Error(`Stock insuficiente para "${product.name}"`), { status: 400 })
       }
       subtotal += Number(product.price) * item.quantity
+      const globalIva = Number(settings.sriIvaRate) || 15
       return {
         productId: product.id,
         name: product.name,
         unit: product.unit,
         price: product.price,
         quantity: item.quantity,
+        ivaRate: product.ivaRate ?? globalIva,
       }
     })
 
@@ -152,6 +178,19 @@ router.post('/', async (req, res, next) => {
     const deliveryFee = check.deliveryFee
     const total = Math.round((subtotal + deliveryFee) * 100) / 100
     const code = await generateOrderCode()
+
+    const billing = data.billing || {}
+    const billingType = billing.type === 'FACTURA' ? 'FACTURA' : 'CONSUMO_FINAL'
+    const billingData =
+      billingType === 'FACTURA'
+        ? {
+            idType: billing.idType || 'RUC',
+            id: billing.id,
+            name: billing.name,
+            address: billing.address || '',
+            email: billing.email || '',
+          }
+        : null
 
     const addressSnapshot = {
       label: address.label,
@@ -180,6 +219,8 @@ router.post('/', async (req, res, next) => {
           addressId: data.addressId || null,
           addressSnapshot,
           notes: data.notes || null,
+          billingType,
+          billingData,
           items: { create: items },
           events: { create: { status: 'PENDING', note: statusNotes.PENDING } },
         },
@@ -197,6 +238,12 @@ router.post('/', async (req, res, next) => {
     })
 
     res.status(201).json({ order: withTotals(order) })
+
+    if (billingType === 'FACTURA') {
+      setImmediate(() => {
+        issueInvoice(order.id).catch(() => {})
+      })
+    }
 
     await sendToAdmins({
       title: 'Nuevo pedido',

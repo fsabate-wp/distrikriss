@@ -52,4 +52,14 @@ export const PAYMENT_LABELS = {
   COD: 'Contra reembolso',
 }
 
+export const INVOICE_STATUS_LABELS = {
+  AUTHORIZED: 'Autorizada',
+  SIGNED: 'Firmada / enviando',
+  PENDING: 'Pendiente',
+  NO_CERTIFICATE: 'Sin certificado',
+  REJECTED: 'Rechazada por el SRI',
+  NOT_AUTHORIZED: 'No autorizada',
+  FAILED: 'Error de envío',
+}
+
 export const WEEKDAYS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']

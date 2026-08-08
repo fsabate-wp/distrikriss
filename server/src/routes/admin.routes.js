@@ -4,9 +4,11 @@ import { prisma } from '../lib/prisma.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendToUser } from '../lib/push.js'
 import { sendWhatsApp } from '../lib/whatsapp.js'
-import { uploadImage, uploadBrand } from '../middleware/upload.js'
+import { uploadImage, uploadBrand, uploadCertificate } from '../middleware/upload.js'
 import { config } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
+import { issueInvoice, canIssueInvoice, loadCertificate } from '../lib/sri/index.js'
+import { sriEndpoints } from '../lib/sri/client.js'
 
 const router = Router()
 router.use(requireAuth, requireAdmin)
@@ -23,6 +25,7 @@ const orderInclude = {
   user: { select: { id: true, name: true, phone: true, email: true } },
   items: true,
   events: { orderBy: { createdAt: 'asc' } },
+  invoice: true,
 }
 
 const toNumber = (v) => Number(v)
@@ -331,6 +334,7 @@ const productSchema = z.object({
   active: z.boolean().optional(),
   featured: z.boolean().optional(),
   discount: z.number().int().min(0).max(100).optional(),
+  ivaRate: z.number().int().min(0).max(100).nullable().optional(),
   categoryId: z.string().optional().nullable(),
 })
 
@@ -354,6 +358,7 @@ router.post('/products', async (req, res, next) => {
         active: data.active ?? true,
         featured: data.featured ?? false,
         discount: data.discount ?? 0,
+        ivaRate: data.ivaRate ?? null,
         categoryId: data.categoryId || null,
       },
       include: { category: { select: { id: true, name: true } } },
@@ -382,6 +387,7 @@ router.put('/products/:id', async (req, res, next) => {
         ...(data.active !== undefined && { active: data.active }),
         ...(data.featured !== undefined && { featured: data.featured }),
         ...(data.discount !== undefined && { discount: data.discount }),
+        ...(data.ivaRate !== undefined && { ivaRate: data.ivaRate }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId || null }),
       },
       include: { category: { select: { id: true, name: true } } },
@@ -496,6 +502,7 @@ router.get('/settings', async (req, res, next) => {
       settings.deliveryFeeBase = toNumber(settings.deliveryFeeBase)
       settings.deliveryFeePerKm = toNumber(settings.deliveryFeePerKm)
       settings.minOrderAmount = toNumber(settings.minOrderAmount)
+      settings.sriIvaRate = toNumber(settings.sriIvaRate)
     }
     res.json({ settings })
   } catch (err) {
@@ -534,17 +541,157 @@ const settingsSchema = z.object({
     }),
   ),
   bankTransfer: z.record(z.any()),
+  ruc: z.string().regex(/^\d{13}$/).or(z.literal('')),
+  businessName: z.string().max(160),
+  tradeName: z.string().max(160),
+  sriEnabled: z.boolean(),
+  sriEnvironment: z.union([z.literal(1), z.literal(2)]),
+  sriEstablishment: z.string().regex(/^\d{3}$/),
+  sriEmissionPoint: z.string().regex(/^\d{3}$/),
+  sriCertificateFile: z.string().max(200),
+  sriCertificatePassword: z.string().max(200),
+  sriObligadoContabilidad: z.boolean(),
+  sriSpecialContributor: z.string().max(40),
+  sriAddress: z.string().max(200),
+  sriAccountingResolution: z.string().max(40),
+  sriIvaRate: z.number().min(0).max(100),
 })
 
 router.put('/settings', async (req, res, next) => {
   try {
-    const data = settingsSchema.parse(req.body)
-    const settings = await prisma.settings.upsert({
-      where: { id: 1 },
-      update: { id: 1, ...data },
-      create: { id: 1, ...data },
+    const data = settingsSchema.partial().parse(req.body)
+    let settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (settings) {
+      settings = await prisma.settings.update({ where: { id: 1 }, data })
+    } else {
+      settings = await prisma.settings.create({ data: { id: 1, storeLat: 0, storeLng: 0, ...data } })
+    }
+    res.json({ settings: { ...settings, deliveryFeeBase: toNumber(settings.deliveryFeeBase), deliveryFeePerKm: toNumber(settings.deliveryFeePerKm), minOrderAmount: toNumber(settings.minOrderAmount), sriIvaRate: toNumber(settings.sriIvaRate) } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ---------------- Facturación electrónica (SRI) ---------------- */
+
+router.post('/uploads/certificate', uploadCertificate.single('certificate'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió ningún certificado' })
+  res.json({ filename: req.file.filename })
+})
+
+router.get('/invoices', async (req, res, next) => {
+  try {
+    const invoices = await prisma.invoice.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        order: {
+          select: { code: true, total: true, status: true, createdAt: true, billingType: true },
+        },
+      },
     })
-    res.json({ settings })
+    res.json({
+      invoices: invoices.map((i) => ({
+        ...i,
+        order: i.order ? { ...i.order, total: toNumber(i.order.total) } : null,
+      })),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/invoices/:id', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: {
+        order: { include: { items: true, user: { select: { name: true, phone: true, email: true } } } },
+      },
+    })
+    if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    res.json({ invoice })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/invoices/:id/retry', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } })
+    if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!canIssueInvoice(settings)) {
+      return res.status(400).json({ error: 'La facturación SRI no está configurada (actívala y sube el certificado)' })
+    }
+    await issueInvoice(invoice.orderId, { force: true })
+    const updated = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: { order: { select: { code: true } } },
+    })
+    res.json({ invoice: updated })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/sri/test', async (req, res, next) => {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!settings || !settings.sriEnabled) {
+      return res.status(400).json({ error: 'Activa la facturación electrónica antes de probar la conexión con el SRI' })
+    }
+
+    const missing = []
+    if (!settings.ruc) missing.push('RUC')
+    if (!settings.businessName) missing.push('razón social')
+    if (!settings.sriCertificateFile) missing.push('certificado .p12')
+    if (!settings.sriCertificatePassword) missing.push('contraseña del certificado')
+    if (missing.length) {
+      return res.status(400).json({ error: `Falta configurar: ${missing.join(', ')}` })
+    }
+
+    let certificate = { ok: true }
+    try {
+      loadCertificate(settings)
+    } catch (err) {
+      certificate = { ok: false, error: String(err?.message || err).slice(0, 300) }
+    }
+
+    const environment = Number(settings.sriEnvironment)
+    const target = sriEndpoints(environment)
+    const checks = []
+    for (const item of [
+      { name: 'Recepción', url: target.reception },
+      { name: 'Autorización', url: target.authorization },
+    ]) {
+      const start = Date.now()
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 10000)
+        const response = await fetch(item.url, { method: 'GET', signal: controller.signal })
+        clearTimeout(timer)
+        checks.push({ name: item.name, url: item.url, reachable: true, httpStatus: response.status, ms: Date.now() - start })
+      } catch (err) {
+        const isTimeout = err?.name === 'AbortError'
+        checks.push({
+          name: item.name,
+          url: item.url,
+          reachable: false,
+          httpStatus: null,
+          ms: Date.now() - start,
+          error: isTimeout ? 'timeout de 10s' : String(err?.cause?.code || err?.message || err).slice(0, 200),
+        })
+      }
+    }
+
+    res.json({
+      environment,
+      environmentLabel: environment === 1 ? 'Producción' : 'Pruebas',
+      certificate,
+      checks,
+      ok: certificate.ok && checks.every((c) => c.reachable && c.httpStatus === 200),
+    })
   } catch (err) {
     next(err)
   }

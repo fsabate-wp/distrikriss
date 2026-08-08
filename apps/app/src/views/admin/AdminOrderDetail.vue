@@ -66,6 +66,28 @@
           <p class="detail-line">{{ order.addressSnapshot.street }}{{ order.addressSnapshot.number ? ' ' + order.addressSnapshot.number : '' }}</p>
           <p v-if="order.addressSnapshot.reference" class="detail-line muted">{{ order.addressSnapshot.reference }}</p>
           <p class="detail-line muted">{{ order.addressSnapshot.city }}</p>
+
+          <div v-if="order.billingType === 'FACTURA' && order.billingData" class="billing-info">
+            <h2 class="sub-title">Facturación</h2>
+            <p class="detail-line"><strong>{{ order.billingData.idType }}</strong> {{ order.billingData.id }}</p>
+            <p class="detail-line">{{ order.billingData.name }}</p>
+            <p v-if="order.billingData.address" class="detail-line muted">{{ order.billingData.address }}</p>
+            <p v-if="order.billingData.email" class="detail-line muted">{{ order.billingData.email }}</p>
+          </div>
+
+          <div v-if="order.invoice" class="invoice-block">
+            <h2 class="sub-title">Factura electrónica</h2>
+            <p class="detail-line"><strong>Número:</strong> {{ order.invoice.number }}</p>
+            <p class="detail-line"><strong>Estado:</strong> <span class="badge" :class="`badge-${order.invoice.status.toLowerCase()}`">{{ INVOICE_STATUS_LABELS[order.invoice.status] }}</span></p>
+            <p class="detail-line mono"><strong>Clave:</strong> {{ order.invoice.accessKey }}</p>
+            <p v-if="order.invoice.authorizationNumber" class="detail-line"><strong>Nro. autorización:</strong> {{ order.invoice.authorizationNumber }}</p>
+            <p v-if="order.invoice.authorizationDate" class="detail-line muted">{{ formatDateTime(order.invoice.authorizationDate) }}</p>
+            <p v-if="order.invoice.responseMessage && !isFinalInvoice" class="detail-line error-msg">{{ order.invoice.responseMessage }}</p>
+            <button v-if="!isFinalInvoice" type="button" class="btn btn-sm btn-outline" :disabled="retrying" @click="retryInvoice">
+              {{ retrying ? 'Reenviando…' : 'Reintentar envío al SRI' }}
+            </button>
+          </div>
+
           <p v-if="order.notes" class="detail-line"><strong>Notas:</strong> {{ order.notes }}</p>
         </div>
 
@@ -93,13 +115,16 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client.js'
-import { money, formatDateTime, formatDateLong, STATUS_LABELS } from '../../utils/format.js'
+import { money, formatDateTime, formatDateLong, STATUS_LABELS, INVOICE_STATUS_LABELS } from '../../utils/format.js'
 
 const route = useRoute()
 const order = ref(null)
 const loading = ref(true)
 const note = ref('')
 const paymentPaid = ref(false)
+const retrying = ref(false)
+
+const isFinalInvoice = computed(() => order.value?.invoice?.status === 'AUTHORIZED')
 
 const statusOrder = ['PENDING', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
 
@@ -133,6 +158,19 @@ async function openConfirm(status) {
     await load()
   } catch (err) {
     alert(err.message)
+  }
+}
+
+async function retryInvoice() {
+  if (!confirm('¿Reintentar el envío de la factura al SRI?')) return
+  retrying.value = true
+  try {
+    await api.post(`/api/admin/invoices/${order.value.invoice.id}/retry`, {})
+    await load()
+  } catch (err) {
+    alert(err.message)
+  } finally {
+    retrying.value = false
   }
 }
 
@@ -228,6 +266,31 @@ onMounted(load)
 .detail-line {
   font-size: 0.9rem;
   margin-bottom: 4px;
+}
+
+.billing-info {
+  margin-top: 14px;
+}
+
+.billing-info .sub-title {
+  margin-top: 0;
+}
+
+.invoice-block {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #DDE8DE;
+  border-radius: var(--radius-sm);
+  background: #F4F9F4;
+}
+
+.invoice-block .sub-title {
+  margin-top: 0;
+}
+
+.mono {
+  font-family: monospace;
+  word-break: break-all;
 }
 
 .timeline {

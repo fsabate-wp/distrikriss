@@ -3,275 +3,39 @@
     <div class="admin-toolbar">
       <div>
         <h1 class="admin-title">Configuración</h1>
-        <p class="muted admin-sub">Controla cómo funciona tu tienda y las entregas</p>
+        <p class="muted admin-sub">Organiza la tienda, las entregas, los pagos y la facturación</p>
       </div>
-      <button v-if="!loading" class="btn btn-primary btn-sm" @click="save" :disabled="saving">
-        {{ saving ? 'Guardando…' : 'Guardar cambios' }}
-      </button>
     </div>
 
-    <div v-if="loading" class="spinner"></div>
+    <nav class="settings-tabs">
+      <router-link
+        v-for="tab in tabs"
+        :key="tab.to"
+        :to="tab.to"
+        class="settings-tab"
+        :class="{ active: route.path === tab.to || route.path.startsWith(tab.to + '/') }"
+      >
+        {{ tab.label }}
+      </router-link>
+    </nav>
 
-    <form v-else @submit.prevent="save">
-      <div class="admin-card">
-        <h2>Estado de la tienda</h2>
-        <div class="switch-row">
-          <label class="switch">
-            <input type="checkbox" v-model="form.storeOpen" />
-            <span class="switch-slider"></span>
-          </label>
-          <div class="switch-text">
-            <strong>{{ form.storeOpen ? 'Tienda abierta' : 'Tienda pausada' }}</strong>
-            <p class="muted">Al pausar la tienda, los clientes no verán productos ni podrán hacer pedidos.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="admin-card">
-        <h2>Información de la tienda</h2>
-        <div class="form-grid">
-          <div class="form-group"><label>Nombre</label><input v-model="form.storeName" class="form-control" required /></div>
-          <div class="form-group"><label>Moneda</label><input v-model="form.currency" class="form-control" required /></div>
-          <div class="form-group"><label>Teléfono</label><input v-model="form.phone" class="form-control" /></div>
-          <div class="form-group"><label>WhatsApp (con código país)</label><input v-model="form.whatsapp" class="form-control" /></div>
-          <div class="form-group"><label>Email</label><input v-model="form.email" class="form-control" /></div>
-          <div class="form-group"><label>Dirección</label><input v-model="form.storeAddress" class="form-control" /></div>
-          <div class="form-group"><label>Latitud</label><input v-model.number="form.storeLat" type="number" step="0.000001" class="form-control" /></div>
-          <div class="form-group"><label>Longitud</label><input v-model.number="form.storeLng" type="number" step="0.000001" class="form-control" /></div>
-        </div>
-      </div>
-
-      <div class="admin-card">
-        <h2>Apariencia</h2>
-        <div class="form-group">
-          <label>Color destacado de la tienda</label>
-          <div class="color-row">
-            <input type="color" v-model="form.accentColor" class="color-input" />
-            <input v-model="form.accentColor" class="form-control color-hex" maxlength="7" />
-            <button type="button" class="btn btn-outline btn-sm" @click="form.accentColor = '#1B5E20'">Restablecer</button>
-          </div>
-          <p class="muted color-help">Este color se usa en botones, enlaces y acentos de toda la tienda. Se aplica automáticamente.</p>
-        </div>
-
-        <div class="form-group">
-          <label>Color secundario</label>
-          <div class="color-row">
-            <input type="color" v-model="form.secondaryColor" class="color-input" />
-            <input v-model="form.secondaryColor" class="form-control color-hex" maxlength="7" />
-            <button type="button" class="btn btn-outline btn-sm" @click="form.secondaryColor = '#1B5E20'">Restablecer</button>
-          </div>
-          <p class="muted color-help">Color de acento para elementos específicos, como el botón de agregar al carrito.</p>
-        </div>
-
-        <div class="form-group">
-          <label>Icono de la app (PWA)</label>
-          <div class="image-row">
-            <div class="image-preview">
-              <img v-if="form.appIconUrl" :src="absolute(form.appIconUrl)" alt="Icono de la app" />
-              <span v-else class="preview-fallback">I</span>
-            </div>
-            <div class="image-actions">
-              <label class="btn btn-outline btn-sm file-btn">
-                Subir imagen
-                <input type="file" accept="image/*" hidden @change="uploadBrand('appIconUrl', $event)" />
-              </label>
-              <button v-if="form.appIconUrl" type="button" class="btn btn-danger btn-sm" @click="form.appIconUrl = ''">Quitar</button>
-              <p v-if="brandUploading === 'appIconUrl'" class="muted">Subiendo…</p>
-            </div>
-          </div>
-          <p class="muted color-help">PNG con transparencia, cuadrado. Recomendado 512x512 (también 192x192). Deja ~20% de margen en los bordes para el formato maskable.</p>
-        </div>
-
-        <div class="form-group">
-          <label>Favicon</label>
-          <div class="image-row">
-            <div class="image-preview">
-              <img v-if="form.faviconUrl" :src="absolute(form.faviconUrl)" alt="Favicon" />
-              <span v-else class="preview-fallback">F</span>
-            </div>
-            <div class="image-actions">
-              <label class="btn btn-outline btn-sm file-btn">
-                Subir imagen
-                <input type="file" accept="image/*" hidden @change="uploadBrand('faviconUrl', $event)" />
-              </label>
-              <button v-if="form.faviconUrl" type="button" class="btn btn-danger btn-sm" @click="form.faviconUrl = ''">Quitar</button>
-              <p v-if="brandUploading === 'faviconUrl'" class="muted">Subiendo…</p>
-            </div>
-          </div>
-          <p class="muted color-help">PNG, SVG o ICO. Recomendado 192x192 (o 16x16/32x32/48x48). Se usa en pestañas, marcadores y la home de iOS.</p>
-        </div>
-      </div>
-
-      <div class="admin-card">
-        <h2>Entregas y envío</h2>
-        <div class="form-grid">
-          <div class="form-group"><label>Radio de entrega (km)</label><input v-model.number="form.deliveryRadiusKm" type="number" step="0.5" min="0" class="form-control" /></div>
-          <div class="form-group"><label>Tarifa base de envío (USD)</label><input v-model.number="form.deliveryFeeBase" type="number" step="0.25" min="0" class="form-control" /></div>
-          <div class="form-group"><label>Costo por km (USD)</label><input v-model.number="form.deliveryFeePerKm" type="number" step="0.05" min="0" class="form-control" /></div>
-          <div class="form-group"><label>Pedido mínimo (USD)</label><input v-model.number="form.minOrderAmount" type="number" step="0.5" min="0" class="form-control" /></div>
-          <div class="form-group"><label>Hora de corte para pedidos (HH:MM)</label><input v-model="form.orderCutoff" class="form-control" placeholder="18:00" /></div>
-        </div>
-
-        <div class="form-group">
-          <label>Días de entrega</label>
-          <div class="day-checks">
-            <label v-for="(label, i) in dayLabels" :key="i" class="day-check">
-              <input type="checkbox" :checked="form.deliveryDays.includes(i)" @change="toggleDay(i)" />
-              {{ label }}
-            </label>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Horario de atención por día</label>
-          <div class="hours-list">
-            <div v-for="(label, i) in dayLabels" :key="i" class="hours-row">
-              <span class="hours-day">{{ label }}</span>
-              <label class="hours-closed"><input type="checkbox" v-model="openHoursArr[i].closed" /> Cerrado</label>
-              <input v-model="openHoursArr[i].open" class="form-control time" :disabled="openHoursArr[i].closed" />
-              <span>a</span>
-              <input v-model="openHoursArr[i].close" class="form-control time" :disabled="openHoursArr[i].closed" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="admin-card">
-        <h2>Horarios de entrega (slots)</h2>
-        <div v-for="(slot, idx) in form.slots" :key="idx" class="slot-row">
-          <input v-model="slot.label" class="form-control" placeholder="Etiqueta (Ej: Mañana)" />
-          <input v-model="slot.start" class="form-control time" placeholder="08:00" />
-          <span>a</span>
-          <input v-model="slot.end" class="form-control time" placeholder="12:00" />
-          <input v-model.number="slot.capacity" type="number" min="0" class="form-control capacity" placeholder="Cap." title="Capacidad de pedidos" />
-          <button type="button" class="btn btn-danger btn-sm" @click="form.slots.splice(idx, 1)">✕</button>
-        </div>
-        <button type="button" class="btn btn-outline btn-sm" @click="addSlot">+ Agregar horario</button>
-      </div>
-
-      <div class="admin-card">
-        <h2>Datos bancarios (transferencia)</h2>
-        <div class="form-grid">
-          <div class="form-group"><label>Banco</label><input v-model="form.bankTransfer.bank" class="form-control" /></div>
-          <div class="form-group"><label>Titular</label><input v-model="form.bankTransfer.accountName" class="form-control" /></div>
-          <div class="form-group"><label>Número de cuenta</label><input v-model="form.bankTransfer.accountNumber" class="form-control" /></div>
-          <div class="form-group"><label>Tipo (Ahorros/Corriente)</label><input v-model="form.bankTransfer.accountType" class="form-control" /></div>
-          <div class="form-group"><label>Nota para el cliente</label><input v-model="form.bankTransfer.note" class="form-control" /></div>
-        </div>
-      </div>
-
-      <p v-if="error" class="error-msg">{{ error }}</p>
-      <p v-if="saved" class="saved-note">✓ Cambios guardados</p>
-
-      <div class="actions">
-        <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar cambios' }}</button>
-      </div>
-    </form>
+    <router-view />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { api } from '../../api/client.js'
-import { applyAccentColor } from '../../lib/accent.js'
-import { applySecondaryColor } from '../../lib/accent.js'
-import { useSettingsStore } from '../../stores/settings.js'
+import { useRoute } from 'vue-router'
 
-const form = ref(null)
-const openHoursArr = ref([])
-const loading = ref(true)
-const saving = ref(false)
-const error = ref('')
-const saved = ref(false)
-const brandUploading = ref(null)
-const settingsStore = useSettingsStore()
-const dayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+const route = useRoute()
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-const absolute = (u) => (u ? (u.startsWith('/') ? API_URL + u : u) : null)
-
-async function load() {
-  try {
-    const data = await api.get('/api/admin/settings')
-    form.value = JSON.parse(JSON.stringify(data.settings))
-    form.value.accentColor = form.value.accentColor || '#1B5E20'
-    form.value.secondaryColor = form.value.secondaryColor || '#1B5E20'
-    form.value.storeOpen = form.value.storeOpen !== false
-    form.value.faviconUrl = form.value.faviconUrl || ''
-    form.value.appIconUrl = form.value.appIconUrl || ''
-    openHoursArr.value = [0, 1, 2, 3, 4, 5, 6].map((d) => form.value.openHours[d] || { open: '07:00', close: '18:00', closed: false })
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
-}
-
-function toggleDay(i) {
-  if (form.value.deliveryDays.includes(i)) {
-    form.value.deliveryDays = form.value.deliveryDays.filter((d) => d !== i)
-  } else {
-    form.value.deliveryDays.push(i)
-    form.value.deliveryDays.sort()
-  }
-}
-
-function addSlot() {
-  form.value.slots.push({ id: `slot-${Date.now()}`, label: 'Nuevo horario', start: '08:00', end: '12:00', capacity: 20 })
-}
-
-async function uploadBrand(field, e) {
-  const file = e.target.files[0]
-  if (!file) return
-  brandUploading.value = field
-  try {
-    const fd = new FormData()
-    fd.append('image', file)
-    const res = await fetch(`${API_URL}/api/admin/uploads/brand`, {
-      method: 'POST',
-      credentials: 'include',
-      body: fd,
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error)
-    form.value[field] = data.relative
-  } catch (err) {
-    alert(err.message)
-  } finally {
-    brandUploading.value = null
-    e.target.value = ''
-  }
-}
-
-async function save() {
-  error.value = ''
-  saved.value = false
-  saving.value = true
-  try {
-    const openHours = {}
-    openHoursArr.value.forEach((h, d) => (openHours[d] = { ...h }))
-    await api.put('/api/admin/settings', { ...form.value, openHours })
-    applyAccentColor(form.value.accentColor)
-    applySecondaryColor(form.value.secondaryColor)
-    settingsStore.settings = {
-      ...(settingsStore.settings || {}),
-      storeName: form.value.storeName,
-      accentColor: form.value.accentColor,
-      secondaryColor: form.value.secondaryColor,
-      storeOpen: form.value.storeOpen,
-      faviconUrl: form.value.faviconUrl,
-      appIconUrl: form.value.appIconUrl,
-    }
-    saved.value = true
-    setTimeout(() => (saved.value = false), 2500)
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    saving.value = false
-  }
-}
-
-onMounted(load)
+const tabs = [
+  { to: '/admin/configuracion', label: 'General' },
+  { to: '/admin/configuracion/apariencia', label: 'Apariencia' },
+  { to: '/admin/configuracion/entregas', label: 'Entregas' },
+  { to: '/admin/configuracion/horarios', label: 'Horarios' },
+  { to: '/admin/configuracion/pagos', label: 'Pagos' },
+  { to: '/admin/configuracion/facturacion', label: 'Facturación SRI' },
+]
 </script>
 
 <style scoped>
@@ -281,34 +45,62 @@ onMounted(load)
   color: var(--dark);
 }
 
-.admin-card h2 {
-  color: var(--dark);
-}
-
 .admin-sub {
   margin-bottom: 0;
 }
 
-.switch-row {
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  background: white;
+  border: 1px solid var(--gray-mid);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+
+.settings-tab {
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--gray);
+  transition: var(--transition);
+}
+
+.settings-tab:hover {
+  background: var(--gray-light);
+  color: var(--dark);
+}
+
+.settings-tab.active {
+  background: var(--green-dark);
+  color: white;
+}
+</style>
+
+<style>
+.settings-page .switch-row {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.switch-text {
+.settings-page .switch-text {
   flex: 1;
 }
 
-.switch-text strong {
+.settings-page .switch-text strong {
   color: var(--dark);
 }
 
-.switch-text p {
+.settings-page .switch-text p {
   font-size: 0.85rem;
   margin-top: 2px;
 }
 
-.switch {
+.settings-page .switch {
   position: relative;
   display: inline-block;
   width: 52px;
@@ -316,13 +108,13 @@ onMounted(load)
   flex-shrink: 0;
 }
 
-.switch input {
+.settings-page .switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.switch-slider {
+.settings-page .switch-slider {
   position: absolute;
   cursor: pointer;
   inset: 0;
@@ -331,7 +123,7 @@ onMounted(load)
   transition: var(--transition);
 }
 
-.switch-slider::before {
+.settings-page .switch-slider::before {
   content: '';
   position: absolute;
   width: 22px;
@@ -344,21 +136,21 @@ onMounted(load)
   box-shadow: var(--shadow);
 }
 
-.switch input:checked + .switch-slider {
+.settings-page .switch input:checked + .switch-slider {
   background: var(--green-dark);
 }
 
-.switch input:checked + .switch-slider::before {
+.settings-page .switch input:checked + .switch-slider::before {
   transform: translateX(24px);
 }
 
-.image-row {
+.settings-page .image-row {
   display: flex;
   gap: 16px;
   align-items: center;
 }
 
-.image-preview {
+.settings-page .image-preview {
   width: 72px;
   height: 72px;
   border-radius: var(--radius-sm);
@@ -369,37 +161,37 @@ onMounted(load)
   justify-content: center;
 }
 
-.image-preview img {
+.settings-page .image-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.preview-fallback {
+.settings-page .preview-fallback {
   font-size: 1.6rem;
   font-weight: 900;
   color: var(--green-light);
 }
 
-.image-actions {
+.settings-page .image-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   align-items: flex-start;
 }
 
-.file-btn {
+.settings-page .file-btn {
   position: relative;
   cursor: pointer;
 }
 
-.color-row {
+.settings-page .color-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.color-input {
+.settings-page .color-input {
   width: 52px;
   height: 42px;
   padding: 0;
@@ -409,29 +201,23 @@ onMounted(load)
   cursor: pointer;
 }
 
-.color-hex {
+.settings-page .color-hex {
   max-width: 140px;
   text-transform: uppercase;
 }
 
-.color-help {
+.settings-page .color-help {
   font-size: 0.8rem;
   margin-top: 8px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.day-checks {
+.settings-page .day-checks {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.day-check {
+.settings-page .day-check {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -443,25 +229,25 @@ onMounted(load)
   cursor: pointer;
 }
 
-.hours-list {
+.settings-page .hours-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.hours-row {
+.settings-page .hours-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.hours-day {
+.settings-page .hours-day {
   width: 56px;
   font-weight: 700;
   font-size: 0.88rem;
 }
 
-.hours-closed {
+.settings-page .hours-closed {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -469,42 +255,48 @@ onMounted(load)
   color: var(--gray);
 }
 
-.time {
+.settings-page .time {
   width: 90px;
   text-align: center;
 }
 
-.slot-row {
+.settings-page .slot-row {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
 }
 
-.slot-row input {
+.settings-page .slot-row input {
   padding: 10px 12px;
 }
 
-.capacity {
+.settings-page .capacity {
   width: 90px;
 }
 
-.saved-note {
+.settings-page .saved-note {
   color: var(--green-mid);
   font-weight: 700;
 }
 
-.actions {
+.settings-page .actions {
   display: flex;
   justify-content: flex-end;
 }
 
+.settings-page .error-msg {
+  color: var(--red);
+  font-weight: 600;
+  margin-top: 12px;
+}
+
 @media (max-width: 700px) {
-  .form-grid {
+  .settings-page .form-grid {
     grid-template-columns: 1fr;
   }
 
-  .slot-row {
+  .settings-page .slot-row {
     flex-wrap: wrap;
   }
 }

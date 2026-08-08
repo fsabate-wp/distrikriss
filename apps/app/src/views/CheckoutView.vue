@@ -94,9 +94,54 @@
             </div>
           </section>
 
+          <!-- Facturación -->
+          <section v-if="settings.settings?.sriEnabled" class="checkout-section">
+            <h2>4. Facturación</h2>
+
+            <div class="payment-options">
+              <button class="payment-card" :class="{ active: billing.type === 'CONSUMO_FINAL' }" @click="setBillingType('CONSUMO_FINAL')">
+                <strong>Consumo final</strong>
+                <span class="muted">Tiquete sin datos fiscales</span>
+              </button>
+              <button class="payment-card" :class="{ active: billing.type === 'FACTURA' }" @click="setBillingType('FACTURA')">
+                <strong>Factura con RUC</strong>
+                <span class="muted">Documento electrónico autorizado por el SRI</span>
+              </button>
+            </div>
+
+            <div v-if="billing.type === 'FACTURA'" class="billing-form">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Tipo de identificación</label>
+                  <select v-model="billing.idType" class="form-control">
+                    <option value="RUC">RUC</option>
+                    <option value="CEDULA">Cédula</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{ billing.idType === 'RUC' ? 'RUC' : 'Cédula' }}</label>
+                  <input v-model="billing.id" class="form-control" :maxlength="billing.idType === 'RUC' ? 13 : 10" placeholder="Sin guiones" />
+                  <p v-if="billing.id && !idValid" class="error-msg">{{ billing.idType === 'RUC' ? 'El RUC no es válido' : 'La cédula no es válida' }}</p>
+                </div>
+                <div class="form-group">
+                  <label>Razón social / Nombre</label>
+                  <input v-model="billing.name" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label>Email</label>
+                  <input v-model="billing.email" type="email" class="form-control" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Dirección</label>
+                <input v-model="billing.address" class="form-control" />
+              </div>
+            </div>
+          </section>
+
           <!-- Notas -->
           <section class="checkout-section">
-            <h2>4. Notas (opcional)</h2>
+            <h2>5. Notas (opcional)</h2>
             <textarea v-model="notes" class="form-control" rows="3" placeholder="Ej: sin cebolla, llamar al llegar…"></textarea>
           </section>
         </div>
@@ -154,13 +199,24 @@ const notes = ref('')
 const deliveryCheck = ref(null)
 const error = ref('')
 const submitting = ref(false)
+const billing = ref({ type: 'CONSUMO_FINAL', idType: 'RUC', id: '', name: '', address: '', email: '' })
 
 const estimatedFee = computed(() => (deliveryCheck.value?.withinRadius ? deliveryCheck.value.deliveryFee : 0))
+
+const wantsInvoice = computed(() => settings.settings?.sriEnabled === true && billing.value.type === 'FACTURA')
+
+const idValid = computed(() => !billing.value.id || validateIdentifier(billing.value.id, billing.value.idType))
+
+const billingValid = computed(() => {
+  if (!wantsInvoice.value) return true
+  return idValid.value && billing.value.id && billing.value.name.trim().length >= 2
+})
 
 const canSubmit = computed(() => {
   if (cart.items.length === 0) return false
   if (!activeAddressValid.value) return false
   if (!delivery.value) return false
+  if (wantsInvoice.value && !billingValid.value) return false
   return true
 })
 
@@ -168,8 +224,13 @@ const submitHint = computed(() => {
   if (cart.items.length === 0) return 'Tu carrito está vacío'
   if (!activeAddressValid.value) return 'Selecciona una dirección dentro del radio de entrega'
   if (!delivery.value) return 'Elige fecha y horario de entrega'
+  if (wantsInvoice.value && !billingValid.value) return 'Completa los datos de facturación'
   return ''
 })
+
+function setBillingType(type) {
+  billing.value.type = type
+}
 
 const activeAddressValid = computed(() => {
   if (addressMode.value === 'existing') {
@@ -218,6 +279,55 @@ function onSlotUpdate(val) {
   delivery.value = val
 }
 
+function validateIdentifier(identifier, type) {
+  const r = String(identifier || '').replace(/\D/g, '')
+  if (type === 'RUC') {
+    if (r.length !== 13) return false
+    const third = Number(r[2])
+    if (third === 9) {
+      const weights = [4, 3, 2, 7, 6, 5, 4, 3, 2]
+      const sum = r.slice(0, 9).split('').reduce((a, d, i) => a + Number(d) * weights[i], 0)
+      const check = 11 - (sum % 11)
+      const dv = check === 11 ? 0 : check === 10 ? 1 : check
+      return dv === Number(r[9]) && Number(r.slice(10)) >= 1
+    }
+    if (third === 6) {
+      const weights = [3, 2, 7, 6, 5, 4, 3, 2]
+      const sum = r.slice(0, 8).split('').reduce((a, d, i) => a + Number(d) * weights[i], 0)
+      const check = 11 - (sum % 11)
+      const dv = check === 11 ? 0 : check === 10 ? 1 : check
+      return dv === Number(r[8])
+    }
+    if (third >= 0 && third <= 5) {
+      const weights = [2, 1, 2, 1, 2, 1, 2, 1, 2]
+      let sum = 0
+      for (let i = 0; i < 9; i += 1) {
+        const prod = Number(r[i]) * weights[i]
+        sum += prod >= 10 ? prod - 9 : prod
+      }
+      const mod = sum % 10
+      const dv = mod === 0 ? 0 : 10 - mod
+      return dv === Number(r[9])
+    }
+    return false
+  }
+  if (type === 'CEDULA') {
+    if (r.length !== 10) return false
+    const province = Number(r.slice(0, 2))
+    if (province < 1 || province > 24) return false
+    const weights = [2, 1, 2, 1, 2, 1, 2, 1, 2]
+    let sum = 0
+    for (let i = 0; i < 9; i += 1) {
+      const prod = Number(r[i]) * weights[i]
+      sum += prod >= 10 ? prod - 9 : prod
+    }
+    const mod = sum % 10
+    const dv = mod === 0 ? 0 : 10 - mod
+    return dv === Number(r[9])
+  }
+  return false
+}
+
 async function submit() {
   error.value = ''
   submitting.value = true
@@ -236,6 +346,16 @@ async function submit() {
     body.paymentMethod = payment.value
     body.notes = notes.value || ''
     body.items = cart.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+    if (settings.settings?.sriEnabled && billing.value.type === 'FACTURA') {
+      body.billing = {
+        type: 'FACTURA',
+        idType: billing.value.idType,
+        id: String(billing.value.id || '').replace(/\D/g, ''),
+        name: billing.value.name.trim(),
+        address: billing.value.address.trim(),
+        email: billing.value.email.trim(),
+      }
+    }
 
     const data = await api.post('/api/orders', body)
     cart.clear()
@@ -401,6 +521,10 @@ onMounted(async () => {
   border-radius: var(--radius-sm);
   font-size: 0.88rem;
   line-height: 1.8;
+}
+
+.billing-form {
+  margin-top: 16px;
 }
 
 .checkout-summary {

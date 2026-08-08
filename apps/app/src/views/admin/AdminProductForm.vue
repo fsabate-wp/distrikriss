@@ -22,6 +22,17 @@
           <input v-model.number="form.discount" type="number" step="1" min="0" max="100" class="form-control" />
         </div>
         <div class="form-group">
+          <label>IVA</label>
+          <select v-model="form.ivaRate" class="form-control">
+            <option :value="null">Tarifa de la tienda ({{ storeIvaLabel }})</option>
+            <option :value="0">IVA 0%</option>
+            <option :value="5">IVA 5%</option>
+            <option :value="12">IVA 12%</option>
+            <option :value="15">IVA 15%</option>
+          </select>
+          <small class="muted">Déjalo en "Tarifa de la tienda" salvo que este producto pague una tarifa distinta (o nada) de IVA.</small>
+        </div>
+        <div class="form-group">
           <label>Stock</label>
           <input v-model.number="form.stock" type="number" class="form-control" />
           <small class="muted">-1 = sin límite</small>
@@ -92,12 +103,15 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 
-const form = ref({ name: '', unit: '', price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '' })
+const form = ref({ name: '', unit: '', price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '', ivaRate: null })
 const categories = ref([])
 const error = ref('')
 const saving = ref(false)
 const uploading = ref(false)
 const uploadError = ref('')
+const storeIva = ref(15)
+
+const storeIvaLabel = computed(() => `${storeIva.value}%`)
 
 async function load() {
   try {
@@ -105,6 +119,12 @@ async function load() {
     categories.value = data.categories
   } catch {
     categories.value = []
+  }
+  try {
+    const s = await api.get('/api/admin/settings')
+    storeIva.value = Number(s.settings.sriIvaRate) || 15
+  } catch {
+    /* usa el default */
   }
   if (!isEdit.value) return
   try {
@@ -122,6 +142,7 @@ async function load() {
         featured: p.featured,
         description: p.description || '',
         imageUrl: p.imageUrl || '',
+        ivaRate: p.ivaRate != null ? Number(p.ivaRate) : null,
       }
     }
   } catch (err) {

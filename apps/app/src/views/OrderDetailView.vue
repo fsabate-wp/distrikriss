@@ -49,6 +49,15 @@
               <p>{{ settings.settings.bankTransfer.accountName }}</p>
               <p class="muted">{{ settings.settings.bankTransfer.accountNumber }}</p>
             </div>
+
+            <div v-if="order.billingType === 'FACTURA' && order.billingData" class="billing-info">
+              <h2 class="sub-title">Facturación</h2>
+              <p class="detail-line"><strong>{{ order.billingData.idType }}</strong> {{ order.billingData.id }}</p>
+              <p class="detail-line">{{ order.billingData.name }}</p>
+              <p v-if="order.billingData.address" class="detail-line muted">{{ order.billingData.address }}</p>
+              <p v-if="order.billingData.email" class="detail-line muted">{{ order.billingData.email }}</p>
+            </div>
+
             <p v-if="order.notes" class="detail-line"><strong>Notas:</strong> {{ order.notes }}</p>
           </div>
 
@@ -205,6 +214,15 @@ onMounted(async () => {
 .detail-line {
   font-size: 0.9rem;
   margin-bottom: 4px;
+}
+
+.billing-info {
+  margin-top: 14px;
+  padding-top: 4px;
+}
+
+.billing-info .sub-title {
+  margin-top: 0;
 }
 
 .bank-info {

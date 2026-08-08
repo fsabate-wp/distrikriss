@@ -26,6 +26,7 @@ const PUBLIC_FIELDS = {
   deliveryDays: true,
   openHours: true,
   slots: true,
+  sriEnabled: true,
 }
 
 router.get('/public', async (req, res, next) => {
