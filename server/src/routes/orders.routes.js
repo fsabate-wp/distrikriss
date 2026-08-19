@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { requireAuth } from '../middleware/auth.js'
 import {
   getSettings,
+  getZoneById,
   deliveryCheck,
   validateDeliveryDay,
   slotAvailabilityFor,
@@ -122,20 +123,24 @@ router.post('/', async (req, res, next) => {
     }
 
     const check = await deliveryCheck(address.lat, address.lng)
-    if (!check.withinRadius) {
+    if (!check.withinZone) {
       return res.status(400).json({
-        error: `La dirección está fuera del radio de entrega (${check.distanceKm} km)`,
-        code: 'OUT_OF_RANGE',
+        error: 'La dirección está fuera de la zona de entrega',
+        code: 'OUT_OF_ZONE',
       })
+    }
+    const zone = await getZoneById(check.zoneId)
+    if (!zone) {
+      return res.status(400).json({ error: 'Zona de entrega no disponible', code: 'NO_ZONE' })
     }
 
     const deliveryDate = parseLocalDate(data.deliveryDate)
-    const dayCheck = validateDeliveryDay(deliveryDate, settings)
+    const dayCheck = validateDeliveryDay(deliveryDate, zone, settings)
     if (!dayCheck.ok) {
       return res.status(400).json({ error: dayCheck.message, code: dayCheck.code })
     }
 
-    const slots = await slotAvailabilityFor(deliveryDate, settings)
+    const slots = await slotAvailabilityFor(deliveryDate, zone, settings)
     const slot = slots.find((s) => s.id === data.slotId)
     if (!slot) {
       return res.status(400).json({ error: 'Horario de entrega no válido', code: 'INVALID_SLOT' })
@@ -168,9 +173,10 @@ router.post('/', async (req, res, next) => {
     })
 
     subtotal = Math.round(subtotal * 100) / 100
-    if (subtotal < Number(settings.minOrderAmount)) {
+    const minOrder = Number(check.minOrderAmount)
+    if (subtotal < minOrder) {
       return res.status(400).json({
-        error: `El pedido mínimo es $${Number(settings.minOrderAmount).toFixed(2)}`,
+        error: `El pedido mínimo para tu zona es $${minOrder.toFixed(2)}`,
         code: 'MIN_ORDER',
       })
     }

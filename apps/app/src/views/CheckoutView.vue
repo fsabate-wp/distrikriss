@@ -56,12 +56,12 @@
               </div>
             </div>
 
-            <div v-if="deliveryCheck" class="fee-banner" :class="{ out: !deliveryCheck.withinRadius }">
-              <template v-if="deliveryCheck.withinRadius">
-                Distancia {{ deliveryCheck.distanceKm }} km · Envío {{ money(deliveryCheck.deliveryFee) }}
+            <div v-if="deliveryCheck" class="fee-banner" :class="{ out: !deliveryCheck.withinZone }">
+              <template v-if="deliveryCheck.withinZone">
+                <strong>{{ deliveryCheck.zoneName }}</strong> · {{ deliveryCheck.distanceKm }} km · Envío {{ money(deliveryCheck.deliveryFee) }}
               </template>
               <template v-else>
-                Fuera del radio de entrega ({{ deliveryCheck.distanceKm }} km)
+                Fuera de la zona de entrega ({{ deliveryCheck.distanceKm }} km)
               </template>
             </div>
           </section>
@@ -69,7 +69,7 @@
           <!-- Entrega -->
           <section class="checkout-section">
             <h2>2. Cuándo quieres tu entrega</h2>
-            <DeliverySlotPicker @update="onSlotUpdate" />
+            <DeliverySlotPicker :zone-id="deliveryCheck?.zoneId || null" @update="onSlotUpdate" />
           </section>
 
           <!-- Pago -->
@@ -201,7 +201,7 @@ const error = ref('')
 const submitting = ref(false)
 const billing = ref({ type: 'CONSUMO_FINAL', idType: 'RUC', id: '', name: '', address: '', email: '' })
 
-const estimatedFee = computed(() => (deliveryCheck.value?.withinRadius ? deliveryCheck.value.deliveryFee : 0))
+const estimatedFee = computed(() => (deliveryCheck.value?.withinZone ? deliveryCheck.value.deliveryFee : 0))
 
 const wantsInvoice = computed(() => settings.settings?.sriEnabled === true && billing.value.type === 'FACTURA')
 
@@ -222,7 +222,7 @@ const canSubmit = computed(() => {
 
 const submitHint = computed(() => {
   if (cart.items.length === 0) return 'Tu carrito está vacío'
-  if (!activeAddressValid.value) return 'Selecciona una dirección dentro del radio de entrega'
+  if (!activeAddressValid.value) return 'Selecciona una dirección dentro de una zona de entrega'
   if (!delivery.value) return 'Elige fecha y horario de entrega'
   if (wantsInvoice.value && !billingValid.value) return 'Completa los datos de facturación'
   return ''
@@ -237,7 +237,7 @@ const activeAddressValid = computed(() => {
     return selectedAddressId.value !== null
   }
   const a = newAddress.value
-  return a.lat !== null && a.lng !== null && a.withinRadius !== false && a.street && a.city
+  return a.lat !== null && a.lng !== null && a.withinZone === true && a.street && a.city
 })
 
 async function loadAddresses() {

@@ -6,6 +6,11 @@
       <p class="muted">{{ error }}</p>
     </div>
 
+    <div v-else-if="!zoneId" class="empty-state">
+      <h3>Selecciona una dirección dentro de una zona de entrega</h3>
+      <p class="muted">Elige primero la dirección para ver los días y horarios disponibles.</p>
+    </div>
+
     <div v-else>
       <p class="slot-note">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -44,12 +49,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { api } from '../api/client.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { WEEKDAYS_SHORT } from '../utils/format.js'
 
 const emit = defineEmits(['update'])
+
+const props = defineProps({
+  zoneId: { type: String, default: null },
+})
 
 const settingsStore = useSettingsStore()
 const dates = ref([])
@@ -68,16 +77,31 @@ function select(date, slot) {
   emit('update', { date, slotId: slot.id, slotLabel: slot.label })
 }
 
-onMounted(async () => {
+async function loadSlots() {
+  if (!props.zoneId) {
+    dates.value = []
+    selectedDate.value = null
+    selectedSlot.value = null
+    loading.value = false
+    return
+  }
+  loading.value = true
+  error.value = ''
   try {
-    const data = await api.get('/api/delivery/slots')
+    const data = await api.get('/api/delivery/slots', { zoneId: props.zoneId })
     dates.value = data.dates
+    selectedDate.value = null
+    selectedSlot.value = null
+    emit('update', null)
   } catch (err) {
     error.value = err.message
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(loadSlots)
+watch(() => props.zoneId, loadSlots)
 </script>
 
 <style scoped>

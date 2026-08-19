@@ -34,6 +34,7 @@ const routes = [
           { path: '', name: 'admin-settings-general', component: () => import('../views/admin/AdminSettingsGeneral.vue') },
           { path: 'apariencia', name: 'admin-settings-appearance', component: () => import('../views/admin/AdminSettingsAppearance.vue') },
           { path: 'entregas', name: 'admin-settings-delivery', component: () => import('../views/admin/AdminSettingsDelivery.vue') },
+          { path: 'zonas', name: 'admin-settings-zones', component: () => import('../views/admin/AdminSettingsZones.vue') },
           { path: 'horarios', name: 'admin-settings-schedule', component: () => import('../views/admin/AdminSettingsSchedule.vue') },
           { path: 'pagos', name: 'admin-settings-payments', component: () => import('../views/admin/AdminSettingsPayments.vue') },
           { path: 'facturacion', name: 'admin-settings-billing', component: () => import('../views/admin/AdminSettingsBilling.vue') },

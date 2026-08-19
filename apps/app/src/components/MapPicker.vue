@@ -23,8 +23,8 @@
     <div class="map-hint">
       <span>Haz clic en el mapa o busca tu dirección para ubicar el pin</span>
     </div>
-    <p v-if="point && point.withinRadius === false" class="out-range">⚠ Esta ubicación está fuera del radio de entrega</p>
-    <p v-else-if="point && point.withinRadius" class="in-range">✓ Dentro del radio de entrega ({{ point.distanceKm }} km)</p>
+    <p v-if="point && point.withinZone === false" class="out-range">⚠ Esta ubicación está fuera de la zona de entrega</p>
+    <p v-else-if="point && point.withinZone" class="in-range">✓ Dentro de la zona de entrega · {{ point.zoneName }} ({{ point.distanceKm }} km)</p>
   </div>
 </template>
 
@@ -43,11 +43,11 @@ const mapEl = ref(null)
 const query = ref('')
 const results = ref([])
 const searching = ref(false)
-const point = ref(props.modelValue ? { ...props.modelValue, withinRadius: null } : null)
+const point = ref(props.modelValue ? { ...props.modelValue, withinZone: null } : null)
 
 let map = null
 let storeMarker = null
-let storeCircle = null
+let zoneLayers = null
 let clientMarker = null
 let searchTimer = null
 let geocodeTimer = null
@@ -77,18 +77,29 @@ function customIcon(color = '#E53935') {
 function setupMarkers() {
   const { lat, lng } = storeCoords()
   const storeColor = cssVar('--green-dark', '#1B5E20')
-  const lightColor = cssVar('--green-light', '#4CAF50')
   storeMarker = L.marker([lat, lng], { icon: customIcon(storeColor) }).addTo(map)
   storeMarker.bindTooltip('DistriKriss', { permanent: false })
+}
 
-  storeCircle = L.circle([lat, lng], {
-    radius: (settings.deliveryRadiusKm || 5) * 1000,
-    color: lightColor,
-    fillColor: lightColor,
-    fillOpacity: 0.08,
-    weight: 1.5,
-    dashArray: '6 6',
-  }).addTo(map)
+async function setupZones() {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/delivery/zones`)
+    const data = await res.json()
+    zoneLayers = L.layerGroup().addTo(map)
+    for (const zone of data.zones || []) {
+      if (!zone.enabled || !zone.polygon) continue
+      const poly = L.polygon(zone.polygon.coordinates, {
+        color: zone.color || '#4CAF50',
+        fillColor: zone.color || '#4CAF50',
+        fillOpacity: 0.1,
+        weight: 2,
+        dashArray: '6 6',
+      }).addTo(zoneLayers)
+      poly.bindTooltip(zone.name, { permanent: false })
+    }
+  } catch {
+    // noop
+  }
 }
 
 function onMapClick(e) {
@@ -119,7 +130,14 @@ async function checkDistance(lat, lng) {
       `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/delivery/check?lat=${lat}&lng=${lng}`,
     )
     const data = await res.json()
-    point.value = { ...point.value, withinRadius: data.withinRadius, distanceKm: data.distanceKm }
+    point.value = {
+      ...point.value,
+      withinZone: data.withinZone,
+      zoneId: data.zoneId,
+      zoneName: data.zoneName,
+      distanceKm: data.distanceKm,
+      deliveryFee: data.deliveryFee,
+    }
     emitUpdate()
   } catch {
     // noop
@@ -192,6 +210,7 @@ onMounted(async () => {
     maxZoom: 19,
   }).addTo(map)
   setupMarkers()
+  setupZones()
   map.on('click', onMapClick)
 
   if (props.modelValue?.lat && props.modelValue?.lng) {

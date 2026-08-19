@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@turf/turf": "^7.4.0",
     "@xmldom/xmldom": "^0.9.10",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",

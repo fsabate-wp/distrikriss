@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import {
   getSettings,
+  getZones,
+  getZoneById,
   deliveryCheck,
   nextDeliveryDates,
   slotAvailabilityFor,
@@ -10,13 +12,32 @@ import { localDateKey } from '../lib/date.js'
 
 const router = Router()
 
+router.get('/zones', async (req, res, next) => {
+  try {
+    const zones = await getZones()
+    res.json({
+      zones: zones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        color: z.color,
+        polygon: z.polygon,
+        enabled: z.enabled,
+      })),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.get('/slots', async (req, res, next) => {
   try {
     const settings = await getSettings()
-    const dates = nextDeliveryDates(settings)
+    const zone = (await getZoneById(req.query.zoneId)) || (await getZones()).find((z) => z.enabled) || null
+    if (!zone) return res.json({ dates: [] })
+    const dates = nextDeliveryDates(zone, settings)
     const result = []
     for (const date of dates) {
-      const slots = await slotAvailabilityFor(date, settings)
+      const slots = await slotAvailabilityFor(date, zone, settings)
       result.push({
         date: localDateKey(date),
         weekday: date.getDay(),
@@ -33,7 +54,9 @@ router.get('/slots/:date', async (req, res, next) => {
   try {
     const date = parseLocalDate(req.params.date)
     const settings = await getSettings()
-    const slots = await slotAvailabilityFor(date, settings)
+    const zone = (await getZoneById(req.query.zoneId)) || (await getZones()).find((z) => z.enabled) || null
+    if (!zone) return res.json({ date: localDateKey(date), slots: [] })
+    const slots = await slotAvailabilityFor(date, zone, settings)
     res.json({ date: localDateKey(date), slots })
   } catch (err) {
     next(err)

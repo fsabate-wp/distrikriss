@@ -7,12 +7,12 @@
         <h2>Ubicación y entregas</h2>
         <div class="form-grid">
           <div class="form-group"><label>Dirección de la tienda</label><input v-model="form.storeAddress" class="form-control" /></div>
-          <div class="form-group"><label>Radio de entrega (km)</label><input v-model.number="form.deliveryRadiusKm" type="number" step="0.1" class="form-control" /></div>
-          <div class="form-group"><label>Costo base de envío ($)</label><input v-model.number="form.deliveryFeeBase" type="number" step="0.01" class="form-control" /></div>
-          <div class="form-group"><label>Costo por km ($)</label><input v-model.number="form.deliveryFeePerKm" type="number" step="0.01" class="form-control" /></div>
-          <div class="form-group"><label>Pedido mínimo ($)</label><input v-model.number="form.minOrderAmount" type="number" step="0.01" class="form-control" /></div>
           <div class="form-group"><label>Hora límite de pedidos</label><input v-model="form.orderCutoff" type="time" class="form-control" /></div>
         </div>
+        <p class="muted zones-note">
+          El costo de envío, el radio, los días, los horarios y el pedido mínimo se configuran por zona en la pestaña
+          <router-link to="/admin/configuracion/zonas">Zonas</router-link>.
+        </p>
       </div>
 
       <p v-if="error" class="error-msg">{{ error }}</p>
@@ -42,10 +42,6 @@ async function load() {
     const data = await api.get('/api/admin/settings')
     form.value = {
       storeAddress: data.settings.storeAddress || '',
-      deliveryRadiusKm: data.settings.deliveryRadiusKm,
-      deliveryFeeBase: data.settings.deliveryFeeBase,
-      deliveryFeePerKm: data.settings.deliveryFeePerKm,
-      minOrderAmount: data.settings.minOrderAmount,
       orderCutoff: data.settings.orderCutoff || '',
     }
   } catch (err) {
@@ -61,13 +57,6 @@ async function save() {
   saving.value = true
   try {
     await api.put('/api/admin/settings', { ...form.value })
-    settingsStore.settings = {
-      ...(settingsStore.settings || {}),
-      deliveryRadiusKm: form.value.deliveryRadiusKm,
-      deliveryFeeBase: form.value.deliveryFeeBase,
-      deliveryFeePerKm: form.value.deliveryFeePerKm,
-      minOrderAmount: form.value.minOrderAmount,
-    }
     saved.value = true
     setTimeout(() => (saved.value = false), 2500)
   } catch (err) {

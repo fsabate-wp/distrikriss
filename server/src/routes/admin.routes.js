@@ -9,6 +9,8 @@ import { config } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
 import { issueInvoice, canIssueInvoice, loadCertificate } from '../lib/sri/index.js'
 import { sriEndpoints } from '../lib/sri/client.js'
+import { booleanIntersects, feature } from '@turf/turf'
+import { closeRing } from '../lib/geo.js'
 
 const router = Router()
 router.use(requireAuth, requireAdmin)
@@ -567,6 +569,117 @@ router.put('/settings', async (req, res, next) => {
       settings = await prisma.settings.create({ data: { id: 1, storeLat: 0, storeLng: 0, ...data } })
     }
     res.json({ settings: { ...settings, deliveryFeeBase: toNumber(settings.deliveryFeeBase), deliveryFeePerKm: toNumber(settings.deliveryFeePerKm), minOrderAmount: toNumber(settings.minOrderAmount), sriIvaRate: toNumber(settings.sriIvaRate) } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ---------------- Zonas de entrega ---------------- */
+
+const zoneSchema = z.object({
+  name: z.string().min(1).max(80),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().or(z.literal('')),
+  polygon: z.object({
+    type: z.literal('Polygon'),
+    coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))),
+  }),
+  enabled: z.boolean().optional(),
+  deliveryDays: z.array(z.number().int().min(0).max(6)),
+  slots: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      start: z.string(),
+      end: z.string(),
+      capacity: z.number().int().min(0),
+    }),
+  ),
+  deliveryFeeBase: z.number().min(0),
+  deliveryFeePerKm: z.number().min(0),
+  minOrderAmount: z.number().min(0),
+  sortOrder: z.number().int().min(0).optional(),
+})
+
+function toZoneResponse(z) {
+  return {
+    id: z.id,
+    name: z.name,
+    color: z.color,
+    polygon: z.polygon,
+    enabled: z.enabled,
+    deliveryDays: z.deliveryDays,
+    slots: z.slots,
+    deliveryFeeBase: toNumber(z.deliveryFeeBase),
+    deliveryFeePerKm: toNumber(z.deliveryFeePerKm),
+    minOrderAmount: toNumber(z.minOrderAmount),
+    sortOrder: z.sortOrder,
+    createdAt: z.createdAt,
+    updatedAt: z.updatedAt,
+  }
+}
+
+async function assertNoOverlap(polygon, excludeId) {
+  const existing = await prisma.deliveryZone.findMany({ select: { id: true, polygon: true, name: true } })
+  const incoming = feature(closeRing(polygon))
+  for (const z of existing) {
+    if (excludeId && z.id === excludeId) continue
+    if (booleanIntersects(incoming, feature(closeRing(z.polygon)))) {
+      throw Object.assign(new Error(`La zona se superpone con "${z.name}"`), { status: 400 })
+    }
+  }
+}
+
+router.get('/zones', async (req, res, next) => {
+  try {
+    const zones = await prisma.deliveryZone.findMany({ orderBy: { sortOrder: 'asc' } })
+    res.json({ zones: zones.map(toZoneResponse) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/zones', async (req, res, next) => {
+  try {
+    const data = zoneSchema.parse(req.body)
+    await assertNoOverlap(data.polygon)
+    const zone = await prisma.deliveryZone.create({
+      data: {
+        name: data.name,
+        color: data.color || '#4CAF50',
+        polygon: closeRing(data.polygon),
+        enabled: data.enabled ?? true,
+        deliveryDays: data.deliveryDays,
+        slots: data.slots,
+        deliveryFeeBase: data.deliveryFeeBase,
+        deliveryFeePerKm: data.deliveryFeePerKm,
+        minOrderAmount: data.minOrderAmount,
+        sortOrder: data.sortOrder ?? 0,
+      },
+    })
+    res.json({ zone: toZoneResponse(zone) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.put('/zones/:id', async (req, res, next) => {
+  try {
+    const data = zoneSchema.partial().parse(req.body)
+    if (data.polygon) {
+      data.polygon = closeRing(data.polygon)
+      await assertNoOverlap(data.polygon, req.params.id)
+    }
+    const zone = await prisma.deliveryZone.update({ where: { id: req.params.id }, data })
+    res.json({ zone: toZoneResponse(zone) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.delete('/zones/:id', async (req, res, next) => {
+  try {
+    await prisma.deliveryZone.delete({ where: { id: req.params.id } })
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }
