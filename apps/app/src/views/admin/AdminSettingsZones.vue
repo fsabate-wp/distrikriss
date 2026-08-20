@@ -30,98 +30,100 @@
           <p v-if="zones.length === 0" class="muted zones-empty">Aún no hay zonas. Crea la primera dibujando en el mapa.</p>
         </div>
 
-        <div class="zone-editor" v-if="editing">
+        <div class="zone-editor">
           <div ref="mapEl" class="zone-map"></div>
 
-          <div class="admin-card zone-form">
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Nombre de la zona</label>
-                <input v-model="editing.name" class="form-control" placeholder="Ej: Zona Norte" />
-              </div>
-              <div class="form-group">
-                <label>Color</label>
-                <div class="color-row">
-                  <input v-model="editing.color" type="color" class="color-input" @change="applyColor" />
-                  <input v-model="editing.color" class="form-control color-hex" maxlength="7" @input="applyColor" />
+          <template v-if="editing">
+            <div class="admin-card zone-form">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Nombre de la zona</label>
+                  <input v-model="editing.name" class="form-control" placeholder="Ej: Zona Norte" />
+                </div>
+                <div class="form-group">
+                  <label>Color</label>
+                  <div class="color-row">
+                    <input v-model="editing.color" type="color" class="color-input" @change="applyColor" />
+                    <input v-model="editing.color" class="form-control color-hex" maxlength="7" @input="applyColor" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Costo base de envío ($)</label>
+                  <input v-model.number="editing.deliveryFeeBase" type="number" step="0.01" min="0" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label>Costo por km ($)</label>
+                  <input v-model.number="editing.deliveryFeePerKm" type="number" step="0.01" min="0" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label>Pedido mínimo ($)</label>
+                  <input v-model.number="editing.minOrderAmount" type="number" step="0.01" min="0" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label>Orden</label>
+                  <input v-model.number="editing.sortOrder" type="number" min="0" class="form-control" />
                 </div>
               </div>
+
               <div class="form-group">
-                <label>Costo base de envío ($)</label>
-                <input v-model.number="editing.deliveryFeeBase" type="number" step="0.01" min="0" class="form-control" />
-              </div>
-              <div class="form-group">
-                <label>Costo por km ($)</label>
-                <input v-model.number="editing.deliveryFeePerKm" type="number" step="0.01" min="0" class="form-control" />
-              </div>
-              <div class="form-group">
-                <label>Pedido mínimo ($)</label>
-                <input v-model.number="editing.minOrderAmount" type="number" step="0.01" min="0" class="form-control" />
-              </div>
-              <div class="form-group">
-                <label>Orden</label>
-                <input v-model.number="editing.sortOrder" type="number" min="0" class="form-control" />
+                <label class="switch-row">
+                  <span class="switch">
+                    <input type="checkbox" v-model="editing.enabled" />
+                    <span class="switch-slider"></span>
+                  </span>
+                  <span class="switch-text">
+                    <strong>Zona activa</strong>
+                    <p>Las zonas inactivas no se ofrecen para entrega</p>
+                  </span>
+                </label>
               </div>
             </div>
 
-            <div class="form-group">
-              <label class="switch-row">
-                <span class="switch">
-                  <input type="checkbox" v-model="editing.enabled" />
-                  <span class="switch-slider"></span>
-                </span>
-                <span class="switch-text">
-                  <strong>Zona activa</strong>
-                  <p>Las zonas inactivas no se ofrecen para entrega</p>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div class="admin-card zone-form">
-            <h2>Días de entrega</h2>
-            <div class="day-checks">
-              <label v-for="day in DAYS" :key="day.value" class="day-check">
-                <input type="checkbox" :value="day.value" v-model="editing.deliveryDays" />
-                {{ day.label }}
-              </label>
-            </div>
-          </div>
-
-          <div class="admin-card zone-form">
-            <h2>Franjas de entrega</h2>
-            <p class="muted">Franjas que verá el cliente al elegir cuándo recibir el pedido en esta zona.</p>
-            <div class="slot-rows">
-              <div v-for="(slot, index) in editing.slots" :key="slot.id" class="slot-row">
-                <input v-model="slot.label" class="form-control" placeholder="Etiqueta" />
-                <input v-model="slot.start" type="time" class="form-control time" />
-                <input v-model="slot.end" type="time" class="form-control time" />
-                <input v-model.number="slot.capacity" type="number" class="form-control capacity" placeholder="Capacidad" />
-                <button type="button" class="btn btn-danger btn-sm" @click="removeSlot(index)">×</button>
+            <div class="admin-card zone-form">
+              <h2>Días de entrega</h2>
+              <div class="day-checks">
+                <label v-for="day in DAYS" :key="day.value" class="day-check">
+                  <input type="checkbox" :value="day.value" v-model="editing.deliveryDays" />
+                  {{ day.label }}
+                </label>
               </div>
             </div>
-            <button type="button" class="btn btn-outline btn-sm" @click="addSlot">+ Agregar franja</button>
-          </div>
 
-          <div class="actions zone-actions">
-            <button
-              v-if="editing.id"
-              type="button"
-              class="btn btn-danger"
-              :disabled="deleting"
-              @click="deleteZone"
-            >{{ deleting ? 'Eliminando…' : 'Eliminar zona' }}</button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="saving || !editing.polygon"
-              @click="saveZone"
-            >{{ saving ? 'Guardando…' : 'Guardar zona' }}</button>
-          </div>
-        </div>
+            <div class="admin-card zone-form">
+              <h2>Franjas de entrega</h2>
+              <p class="muted">Franjas que verá el cliente al elegir cuándo recibir el pedido en esta zona.</p>
+              <div class="slot-rows">
+                <div v-for="(slot, index) in editing.slots" :key="slot.id" class="slot-row">
+                  <input v-model="slot.label" class="form-control" placeholder="Etiqueta" />
+                  <input v-model="slot.start" type="time" class="form-control time" />
+                  <input v-model="slot.end" type="time" class="form-control time" />
+                  <input v-model.number="slot.capacity" type="number" class="form-control capacity" placeholder="Capacidad" />
+                  <button type="button" class="btn btn-danger btn-sm" @click="removeSlot(index)">×</button>
+                </div>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" @click="addSlot">+ Agregar franja</button>
+            </div>
 
-        <div v-else class="zone-placeholder">
-          <p>Selecciona una zona de la lista o crea una nueva para editarla.</p>
+            <div class="actions zone-actions">
+              <button
+                v-if="editing.id"
+                type="button"
+                class="btn btn-danger"
+                :disabled="deleting"
+                @click="deleteZone"
+              >{{ deleting ? 'Eliminando…' : 'Eliminar zona' }}</button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="saving || !editing.polygon"
+                @click="saveZone"
+              >{{ saving ? 'Guardando…' : 'Guardar zona' }}</button>
+            </div>
+          </template>
+
+          <div v-else class="zone-placeholder-inline">
+            <p>Selecciona una zona de la lista o crea una nueva para editarla.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -223,6 +225,18 @@ function initMap() {
   map.on('pm:create', onDrawn)
 }
 
+function ensureMap() {
+  const el = mapEl.value
+  if (!el) return false
+  if (map && map.getContainer() === el) return true
+  if (map) {
+    map.remove()
+    map = null
+  }
+  initMap()
+  return true
+}
+
 function onDrawn(e) {
   if (e.shape !== 'Polygon') return
   if (!editing.value) editing.value = emptyZone()
@@ -258,6 +272,7 @@ function updatePolygonFromLayer() {
 }
 
 function setActivePolygon(polygon) {
+  if (!ensureMap()) return
   if (activeLayer) {
     map.removeLayer(activeLayer)
     activeLayer = null
@@ -285,7 +300,7 @@ function newZone() {
   selectedId.value = null
   editing.value = emptyZone()
   setActivePolygon(null)
-  map.setView(centerOf(), 14)
+  if (ensureMap()) map.setView(centerOf(), 14)
 }
 
 function addSlot() {
@@ -367,7 +382,7 @@ onMounted(async () => {
   await settingsStore.load()
   await loadZones()
   await nextTick()
-  initMap()
+  ensureMap()
 })
 
 onBeforeUnmount(() => {
@@ -476,13 +491,14 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.zone-placeholder {
+.zone-placeholder-inline {
   background: white;
   border: 1px dashed var(--gray-mid);
   border-radius: var(--radius);
-  padding: 60px 20px;
+  padding: 40px 20px;
   text-align: center;
   color: var(--gray);
+  margin-top: 20px;
 }
 
 @media (max-width: 900px) {

@@ -12,7 +12,12 @@ export async function getSettings() {
 }
 
 export async function ensureDefaultZone() {
-  const count = await prisma.deliveryZone.count()
+  let count
+  try {
+    count = await prisma.deliveryZone.count()
+  } catch {
+    return
+  }
   if (count > 0) return
   const settings = await prisma.settings.findUnique({ where: { id: 1 } })
   if (!settings) return
@@ -33,7 +38,12 @@ export async function ensureDefaultZone() {
 }
 
 export async function getZones() {
-  const count = await prisma.deliveryZone.count()
+  let count
+  try {
+    count = await prisma.deliveryZone.count()
+  } catch {
+    return []
+  }
   if (count === 0) await ensureDefaultZone()
   return prisma.deliveryZone.findMany({ orderBy: { sortOrder: 'asc' } })
 }
