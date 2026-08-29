@@ -5,6 +5,10 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendToUser } from '../lib/push.js'
 import { sendWhatsApp } from '../lib/whatsapp.js'
 import { uploadImage, uploadBrand, uploadCertificate } from '../middleware/upload.js'
+import multer from 'multer'
+import path from 'node:path'
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { config } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
 import { issueInvoice, canIssueInvoice, loadCertificate } from '../lib/sri/index.js'
@@ -317,6 +321,8 @@ router.get('/products', async (req, res, next) => {
       products: products.map((p) => ({
         ...p,
         price: toNumber(p.price),
+        minQuantity: p.minQuantity != null ? toNumber(p.minQuantity) : 1,
+        stepQuantity: p.stepQuantity != null ? toNumber(p.stepQuantity) : 1,
         imageUrl: p.imageUrl?.startsWith('/') ? `${config.publicApiUrl}${p.imageUrl}` : p.imageUrl,
       })),
     })
@@ -331,6 +337,10 @@ const productSchema = z.object({
   description: z.string().max(1000).optional().or(z.literal('')),
   price: z.number().min(0),
   unit: z.string().min(1).max(60),
+  presentation: z.string().max(120).optional().or(z.literal('')).nullable(),
+  sku: z.string().max(40).optional().or(z.literal('')).nullable(),
+  minQuantity: z.number().min(0.01).max(10000).optional(),
+  stepQuantity: z.number().min(0.01).max(10000).optional(),
   stock: z.number().int().min(-1).optional(),
   imageUrl: z.string().max(500).optional().or(z.literal('')),
   active: z.boolean().optional(),
@@ -348,6 +358,10 @@ router.post('/products', async (req, res, next) => {
     if (existing) {
       return res.status(409).json({ error: 'Ya existe un producto con ese nombre' })
     }
+    if (data.sku) {
+      const skuExists = await prisma.product.findUnique({ where: { sku: data.sku } })
+      if (skuExists) return res.status(409).json({ error: `Ya existe un producto con SKU ${data.sku}` })
+    }
     const product = await prisma.product.create({
       data: {
         name: data.name,
@@ -355,6 +369,10 @@ router.post('/products', async (req, res, next) => {
         description: data.description || null,
         price: data.price,
         unit: data.unit,
+        presentation: data.presentation || null,
+        sku: data.sku || null,
+        minQuantity: data.minQuantity ?? 1,
+        stepQuantity: data.stepQuantity ?? (data.unit?.toLowerCase() === 'gramos' ? (data.minQuantity ?? 1) : 1),
         stock: data.stock ?? -1,
         imageUrl: data.imageUrl || null,
         active: data.active ?? true,
@@ -365,7 +383,7 @@ router.post('/products', async (req, res, next) => {
       },
       include: { category: { select: { id: true, name: true } } },
     })
-    res.status(201).json({ product: { ...product, price: toNumber(product.price) } })
+    res.status(201).json({ product: { ...product, price: toNumber(product.price), minQuantity: toNumber(product.minQuantity), stepQuantity: toNumber(product.stepQuantity) } })
   } catch (err) {
     next(err)
   }
@@ -376,6 +394,10 @@ router.put('/products/:id', async (req, res, next) => {
     const data = productSchema.partial().parse(req.body)
     const product = await prisma.product.findUnique({ where: { id: req.params.id } })
     if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+    if (data.sku !== undefined && data.sku) {
+      const skuOwner = await prisma.product.findUnique({ where: { sku: data.sku } })
+      if (skuOwner && skuOwner.id !== product.id) return res.status(409).json({ error: `SKU ${data.sku} ya está en uso` })
+    }
     const updated = await prisma.product.update({
       where: { id: product.id },
       data: {
@@ -384,6 +406,10 @@ router.put('/products/:id', async (req, res, next) => {
         ...(data.description !== undefined && { description: data.description || null }),
         ...(data.price !== undefined && { price: data.price }),
         ...(data.unit !== undefined && { unit: data.unit }),
+        ...(data.presentation !== undefined && { presentation: data.presentation || null }),
+        ...(data.sku !== undefined && { sku: data.sku || null }),
+        ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
+        ...(data.stepQuantity !== undefined && { stepQuantity: data.stepQuantity }),
         ...(data.stock !== undefined && { stock: data.stock }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl || null }),
         ...(data.active !== undefined && { active: data.active }),
@@ -394,7 +420,7 @@ router.put('/products/:id', async (req, res, next) => {
       },
       include: { category: { select: { id: true, name: true } } },
     })
-    res.json({ product: { ...updated, price: toNumber(updated.price) } })
+    res.json({ product: { ...updated, price: toNumber(updated.price), minQuantity: toNumber(updated.minQuantity), stepQuantity: toNumber(updated.stepQuantity) } })
   } catch (err) {
     next(err)
   }
@@ -409,6 +435,173 @@ router.delete('/products/:id', async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+/* ---------------- Importación CSV ---------------- */
+
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(csv|txt)$/i.test(file.originalname) || /text\/csv|text\/plain|application\/vnd.ms-excel/.test(file.mimetype)
+    if (ok) return cb(null, true)
+    cb(Object.assign(new Error('Solo se permiten archivos CSV'), { status: 400 }))
+  },
+})
+
+function parseCSVBuffer(buffer) {
+  const raw = buffer.toString('utf8').replace(/^\uFEFF/, '')
+  const lines = raw.split(/\r?\n/)
+  if (lines.length < 1) return { header: [], rows: [] }
+  // Find first non-empty line as header
+  let headerIdx = 0
+  while (headerIdx < lines.length && !lines[headerIdx].trim()) headerIdx++
+  if (headerIdx >= lines.length) return { header: [], rows: [] }
+  const headerLine = lines[headerIdx]
+  const header = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''))
+  const rows = []
+  let currentCategory = null
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line.trim()) continue
+    // naive split preserving quoted? simple split
+    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
+    const skuIdx = header.indexOf('sku')
+    const prodIdx = header.findIndex(h => h === 'productos' || h === 'producto' || h === 'name' || h === 'nombre')
+    const nameIdx = prodIdx >= 0 ? prodIdx : 1
+    const unidadIdx = header.findIndex(h => h === 'unidad' || h === 'unit' || h === 'unidadmedida')
+    const minimoIdx = header.findIndex(h => h === 'minimo' || h === 'minimo ' || h === 'mínimo' || h === 'minquantity' || h === 'min' )
+    const presentIdx = header.findIndex(h => h.includes('prsent') || h.includes('present') || h === 'presentacion' || h === 'presentación')
+    const precioIdx = header.findIndex(h => h === 'precio' || h === 'price')
+    const categoriaIdx = header.findIndex(h => h === 'categoria' || h === 'categoría' || h === 'category')
+
+    const skuRaw = skuIdx >= 0 ? (cols[skuIdx] || '').trim() : ''
+    const nameRaw = (cols[nameIdx] || '').trim()
+    const unidadRaw = unidadIdx >= 0 ? (cols[unidadIdx] || '').trim() : ''
+    const minimoRaw = minimoIdx >= 0 ? (cols[minimoIdx] || '').trim() : ''
+    const presentRaw = presentIdx >= 0 ? (cols[presentIdx] || '').trim() : ''
+    const precioRaw = precioIdx >= 0 ? (cols[precioIdx] || '').trim() : ''
+    const categoriaRaw = categoriaIdx >= 0 ? (cols[categoriaIdx] || '').trim() : ''
+
+    // Detect category header row: sku empty & unidad empty & name matches known categories or present empty
+    const isCategoryRow = !skuRaw && !unidadRaw && nameRaw && (['legumbres','montes','granos','frutas'].includes(nameRaw.toLowerCase()) || (categoriaRaw && !nameRaw))
+    if (isCategoryRow) {
+      currentCategory = nameRaw || categoriaRaw
+      continue
+    }
+    if (categoriaRaw) currentCategory = categoriaRaw
+    if (!nameRaw) continue
+
+    // If current category still null and name looks like category header
+    if (!unidadRaw && !minimoRaw && !precioRaw && nameRaw && !skuRaw) {
+      currentCategory = nameRaw
+      continue
+    }
+    if (!currentCategory) currentCategory = categoriaRaw || 'General'
+
+    let unit = unidadRaw || 'Unidad'
+    if (/^unida$/i.test(unit)) unit = 'Unidad'
+    let minQuantity = parseFloat((minimoRaw || '1').replace(',', '.'))
+    if (!Number.isFinite(minQuantity) || minQuantity <=0) minQuantity = 1
+    let price = parseFloat((precioRaw || '0').replace(',', '.'))
+    if (!Number.isFinite(price)) price = 0
+    const presentation = presentRaw || null
+    const sku = skuRaw || null
+    const catName = categoriaRaw || currentCategory || 'General'
+    rows.push({ sku, name: nameRaw, unit, minQuantity, presentation, price, categoryName: catName })
+  }
+  return { header, rows }
+}
+
+router.post('/products/import', csvUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Envía un archivo CSV con campo "file"' })
+    const mode = req.query.mode === 'replace' ? 'replace' : 'upsert'
+    const { rows } = parseCSVBuffer(req.file.buffer)
+    if (!rows.length) return res.status(400).json({ error: 'CSV vacío o formato no reconocido' })
+
+    if (mode === 'replace') {
+      // Borrar pedidos antes de borrar productos por FK
+      await prisma.invoice.deleteMany({})
+      await prisma.orderEvent.deleteMany({})
+      await prisma.orderItem.deleteMany({})
+      await prisma.order.deleteMany({})
+      await prisma.product.deleteMany({})
+      // No borramos categorías si vamos a reusar, pero limpiamos si el CSV trae categorías específicas
+      // Mantenemos categorías para re-crear
+    }
+
+    // Ensure categories exist
+    const catNames = [...new Set(rows.map(r => r.categoryName).filter(Boolean))]
+    const catMap = {}
+    for (const catName of catNames) {
+      const slug = slugify(catName)
+      let cat = await prisma.category.findUnique({ where: { slug } })
+      if (!cat) {
+        cat = await prisma.category.create({ data: { name: catName, slug, sortOrder: 0 } })
+      }
+      catMap[catName] = cat.id
+      // also map slug variant
+      catMap[slug] = cat.id
+    }
+
+    let created = 0, updated = 0, skipped = 0
+    const errors = []
+    for (const r of rows) {
+      try {
+        const slug = slugify(r.name)
+        let stepQuantity = 1
+        const ul = r.unit.toLowerCase()
+        if (ul === 'gramos') stepQuantity = r.minQuantity
+        else if (ul === 'kilo') stepQuantity = 1
+        else stepQuantity = 1
+
+        const data = {
+          name: r.name,
+          slug,
+          unit: r.unit,
+          presentation: r.presentation,
+          minQuantity: r.minQuantity,
+          stepQuantity,
+          price: r.price,
+          categoryId: catMap[r.categoryName] || null,
+          stock: -1,
+          active: true,
+        }
+
+        if (r.sku) {
+          const existingBySku = await prisma.product.findUnique({ where: { sku: r.sku } })
+          if (existingBySku) {
+            await prisma.product.update({ where: { id: existingBySku.id }, data })
+            updated++
+            continue
+          }
+        }
+        const existingBySlug = await prisma.product.findUnique({ where: { slug } })
+        if (existingBySlug) {
+          await prisma.product.update({ where: { id: existingBySlug.id }, data: { ...data, sku: r.sku || existingBySlug.sku } })
+          updated++
+        } else {
+          await prisma.product.create({ data: { ...data, sku: r.sku } })
+          created++
+        }
+      } catch (e) {
+        skipped++
+        errors.push(`${r.name}: ${e.message}`.slice(0,120))
+      }
+    }
+
+    res.json({ ok: true, mode, total: rows.length, created, updated, skipped, errors: errors.slice(0,10), categories: catNames })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/products/import/template', async (req, res) => {
+  const csv = 'sku,PRODUCTOS,Unidad,Minimo,PRSENTACION,Precio\n1,Ejemplo Ají,Gramos,50,Caja de plastico,1.50\n2,Ejemplo Papa,Kilo,1,Malla,2.00\n'
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="plantilla-productos.csv"')
+  res.send(csv)
 })
 
 /* ---------------- Categorías ---------------- */

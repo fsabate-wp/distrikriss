@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:push": "prisma db push",
     "prisma:seed": "node prisma/seed.js",
+    "prisma:reset-catalog": "node prisma/reset-catalog.js",
     "vapid": "node -e \"const w=require('web-push');const k=w.generateVAPIDKeys();console.log('VAPID_PUBLIC_KEY=\\\"' + k.publicKey + '\\\"');console.log('VAPID_PRIVATE_KEY=\\\"' + k.privateKey + '\\\"')\""
   },
   "prisma": {

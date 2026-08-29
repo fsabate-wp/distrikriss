@@ -59,7 +59,7 @@ const orderSchema = z
       .array(
         z.object({
           productId: z.string(),
-          quantity: z.number().int().min(1).max(500),
+          quantity: z.number().min(0.01).max(5000),
         }),
       )
       .min(1),
@@ -89,7 +89,7 @@ function withTotals(order) {
     subtotal: toNumber(order.subtotal),
     deliveryFee: toNumber(order.deliveryFee),
     total: toNumber(order.total),
-    items: order.items?.map((i) => ({ ...i, price: toNumber(i.price) })),
+    items: order.items?.map((i) => ({ ...i, price: toNumber(i.price), quantity: toNumber(i.quantity), ivaRate: i.ivaRate != null ? toNumber(i.ivaRate) : null })),
   }
 }
 
@@ -157,6 +157,10 @@ router.post('/', async (req, res, next) => {
     const items = data.items.map((item) => {
       const product = productMap.get(item.productId)
       if (!product) throw Object.assign(new Error('Producto no disponible'), { status: 400 })
+      const minQ = product.minQuantity != null ? Number(product.minQuantity) : 1
+      if (item.quantity < minQ - 1e-9) {
+        throw Object.assign(new Error(`La cantidad mínima para "${product.name}" es ${minQ} ${product.unit}`), { status: 400 })
+      }
       if (product.stock >= 0 && product.stock < item.quantity) {
         throw Object.assign(new Error(`Stock insuficiente para "${product.name}"`), { status: 400 })
       }
@@ -165,7 +169,9 @@ router.post('/', async (req, res, next) => {
       return {
         productId: product.id,
         name: product.name,
+        sku: product.sku || null,
         unit: product.unit,
+        presentation: product.presentation || null,
         price: product.price,
         quantity: item.quantity,
         ivaRate: product.ivaRate ?? globalIva,

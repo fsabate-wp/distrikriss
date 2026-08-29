@@ -21,11 +21,12 @@
             </div>
             <div class="cart-item-info">
               <p class="cart-item-name">{{ item.name }}</p>
-              <p class="cart-item-meta">{{ money(item.price) }} / {{ item.unit }}</p>
+              <p class="cart-item-meta">{{ money(item.price) }} / {{ item.unit }}<span v-if="item.presentation"> · {{ item.presentation }}</span></p>
+              <p v-if="item.minQuantity" class="cart-item-meta">Mín {{ formatQty(item.minQuantity) }} · paso {{ formatQty(item.stepQuantity || 1) }}</p>
               <div class="qty-control">
-                <button @click="cart.setQuantity(item.productId, item.quantity - 1)">−</button>
-                <span>{{ item.quantity }}</span>
-                <button @click="cart.setQuantity(item.productId, item.quantity + 1)">+</button>
+                <button @click="cart.decrement(item.productId)">−</button>
+                <span>{{ formatQty(item.quantity) }} {{ item.unit }}</span>
+                <button @click="cart.increment(item.productId)">+</button>
               </div>
             </div>
             <div class="cart-item-right">
@@ -58,6 +59,11 @@ import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart.js'
 import { useAuthStore } from '../stores/auth.js'
 import { money } from '../utils/format.js'
+
+function formatQty(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
 
 defineProps({ open: Boolean })
 const emit = defineEmits(['close'])

@@ -1,7 +1,11 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import 'dotenv/config'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const prisma = new PrismaClient()
 
 const STORE = {
@@ -10,45 +14,6 @@ const STORE = {
   password: process.env.ADMIN_PASSWORD || 'distrikriss-admin',
   phone: process.env.ADMIN_PHONE || '0959841957',
 }
-
-const categories = [
-  { name: 'Frutas', slug: 'frutas', imageUrl: '/uploads/imgs/frutas.webp', sortOrder: 1 },
-  { name: 'Legumbres', slug: 'legumbres', imageUrl: '/uploads/imgs/legumbres.webp', sortOrder: 2 },
-  { name: 'Lácteos', slug: 'lacteos', imageUrl: '/uploads/imgs/lacteo.webp', sortOrder: 3 },
-  { name: 'Pollos', slug: 'pollos', imageUrl: '/uploads/imgs/polllo.webp', sortOrder: 4 },
-  { name: 'Carnes', slug: 'carnes', imageUrl: '/uploads/imgs/carnes.webp', sortOrder: 5 },
-  { name: 'Embutidos', slug: 'embutidos', imageUrl: '/uploads/imgs/embutidis.webp', sortOrder: 6 },
-  { name: 'Abastos', slug: 'abastos', imageUrl: '/uploads/imgs/abasto.webp', sortOrder: 7 },
-  { name: 'Plásticos', slug: 'plasticos', imageUrl: '/uploads/imgs/plasticos.webp', sortOrder: 8 },
-]
-
-const products = [
-  { name: 'Banano (cabeza)', slug: 'banano-cabeza', unit: 'cabeza', price: 2.5, category: 'frutas', description: 'Cabeza de banano ecuatoriano seleccionado.', featured: true },
-  { name: 'Manzana Roja', slug: 'manzana-roja', unit: 'lb', price: 1.6, category: 'frutas', description: 'Manzana roja fresca importada.' },
-  { name: 'Naranja', slug: 'naranja', unit: 'lb', price: 0.9, category: 'frutas', description: 'Naranja jugosa nacional.' },
-  { name: 'Papaya', slug: 'papaya', unit: 'unidad', price: 2.0, category: 'frutas', description: 'Papaya madura lista para servir.' },
-  { name: 'Arroz', slug: 'arroz', unit: '5 lb', price: 5.75, category: 'legumbres', description: 'Arroz nacional granillo (fundita 5 lb).', featured: true },
-  { name: 'Fréjol Canario', slug: 'frejol-canario', unit: 'lb', price: 2.2, category: 'legumbres', description: 'Fréjol canario nacional.' },
-  { name: 'Lenteja', slug: 'lenteja', unit: 'lb', price: 1.4, category: 'legumbres', description: 'Lenteja roja de primera.' },
-  { name: 'Maíz suave', slug: 'maiz-suave', unit: 'lb', price: 1.1, category: 'legumbres', description: 'Maíz suave tierno.' },
-  { name: 'Leche entera', slug: 'leche-entera', unit: 'litro', price: 1.15, category: 'lacteos', description: 'Leche entera pasteurizada.', featured: true },
-  { name: 'Queso fresco', slug: 'queso-fresco', unit: 'lb', price: 3.5, category: 'lacteos', description: 'Queso fresco artesanal.' },
-  { name: 'Yogurt natural', slug: 'yogurt-natural', unit: '1 L', price: 2.8, category: 'lacteos', description: 'Yogurt natural sin azúcar.' },
-  { name: 'Pollo entero', slug: 'pollo-entero', unit: 'lb', price: 2.4, category: 'pollos', description: 'Pollo entero eviscerado de granja.', featured: true },
-  { name: 'Pechuga de pollo', slug: 'pechuga-pollo', unit: 'lb', price: 3.0, category: 'pollos', description: 'Pechuga de pollo sin hueso.' },
-  { name: 'Pollo trozado', slug: 'pollo-trozado', unit: 'lb', price: 2.5, category: 'pollos', description: 'Pollo trozado en presas.' },
-  { name: 'Carne de res molida', slug: 'carne-res-molida', unit: 'lb', price: 3.8, category: 'carnes', description: 'Carne de res molida de primera.', featured: true },
-  { name: 'Carne de cerdo', slug: 'carne-cerdo', unit: 'lb', price: 3.2, category: 'carnes', description: 'Carne de cerdo para menestra.' },
-  { name: 'Costilla de res', slug: 'costilla-res', unit: 'lb', price: 3.5, category: 'carnes', description: 'Costilla de res nacional.' },
-  { name: 'Salchicha', slug: 'salchicha', unit: 'lb', price: 2.1, category: 'embutidos', description: 'Salchicha de primera.' },
-  { name: 'Mortadela', slug: 'mortadela', unit: 'lb', price: 2.3, category: 'embutidos', description: 'Mortadela ahumada.' },
-  { name: 'Jamón', slug: 'jamon', unit: 'lb', price: 3.4, category: 'embutidos', description: 'Jamón de cerdo.' },
-  { name: 'Aceite vegetal', slug: 'aceite-vegetal', unit: '1 L', price: 3.1, category: 'abastos', description: 'Aceite vegetal comestible.', featured: true },
-  { name: 'Azúcar', slug: 'azucar', unit: '5 lb', price: 4.1, category: 'abastos', description: 'Azúcar blanca granulada.' },
-  { name: 'Sal', slug: 'sal', unit: '1 lb', price: 0.4, category: 'abastos', description: 'Sal refinada.' },
-  { name: 'Fundas plásticas', slug: 'fundas-plasticas', unit: 'paquete', price: 1.8, category: 'plasticos', description: 'Paquete de fundas de mercado.' },
-  { name: 'Vasos desechables', slug: 'vasos-desechables', unit: 'paquete', price: 2.5, category: 'plasticos', description: 'Vasos desechables de 7 oz (50 und).' },
-]
 
 const settings = {
   storeName: 'DistriKriss',
@@ -91,72 +56,164 @@ const settings = {
   },
 }
 
+// New catalog from CSV if exists
+const slugify = (str) =>
+  str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+function parseCSV(csvPath) {
+  const raw = fs.readFileSync(csvPath, 'utf8').replace(/^\uFEFF/, '')
+  const lines = raw.split(/\r?\n/).filter(l => l.trim() !== '')
+  const header = lines[0].split(',').map(h => h.trim().toLowerCase())
+  const skuIdx = header.indexOf('sku')
+  const prodIdx = header.indexOf('productos')
+  const unidadIdx = header.indexOf('unidad')
+  const minimoIdx = header.indexOf('minimo')
+  const presentIdx = header.findIndex(h => h.includes('prsent') || h.includes('present'))
+  const precioIdx = header.indexOf('precio')
+  let currentCategory = null
+  const items = []
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim())
+    const skuRaw = cols[skuIdx]?.trim() || ''
+    const nameRaw = cols[prodIdx]?.trim() || ''
+    const unidadRaw = cols[unidadIdx]?.trim() || ''
+    const minimoRaw = cols[minimoIdx]?.trim() || ''
+    const presentRaw = cols[presentIdx]?.trim() || ''
+    const precioRaw = cols[precioIdx]?.trim() || ''
+    if (!skuRaw && !unidadRaw && nameRaw) { currentCategory = nameRaw; continue }
+    if (!nameRaw || !currentCategory) continue
+    let unit = unidadRaw || 'Unidad'
+    if (/^unida$/i.test(unitRaw)) unit = 'Unidad'
+    unit = unit.trim()
+    let minQuantity = parseFloat(minimoRaw.replace(',', '.'))
+    if (!Number.isFinite(minQuantity) || minQuantity <= 0) minQuantity = 1
+    let price = parseFloat(precioRaw.replace(',', '.'))
+    if (!Number.isFinite(price) || price < 0) price = 1
+    const presentation = presentRaw ? presentRaw.trim() : null
+    let stepQuantity = 1
+    const unitLower = unit.toLowerCase()
+    if (unitLower === 'gramos') stepQuantity = minQuantity
+    else if (unitLower === 'kilo') stepQuantity = 1
+    else stepQuantity = 1
+    items.push({ sku: skuRaw || null, name: nameRaw, slug: slugify(nameRaw), unit, presentation, minQuantity, stepQuantity, price, categoryName: currentCategory })
+  }
+  return items
+}
+
+function getCategorySlug(name) {
+  const lower = name.toLowerCase().trim()
+  if (lower.includes('legumbre')) return 'legumbres'
+  if (lower.includes('monte')) return 'montes'
+  if (lower.includes('grano')) return 'granos'
+  if (lower.includes('fruta')) return 'frutas'
+  return slugify(name)
+}
+
+const legacyCategories = [
+  { name: 'Frutas', slug: 'frutas', imageUrl: '/uploads/imgs/frutas.webp', sortOrder: 1 },
+  { name: 'Legumbres', slug: 'legumbres', imageUrl: '/uploads/imgs/legumbres.webp', sortOrder: 2 },
+  { name: 'Lácteos', slug: 'lacteos', imageUrl: '/uploads/imgs/lacteo.webp', sortOrder: 3 },
+  { name: 'Pollos', slug: 'pollos', imageUrl: '/uploads/imgs/polllo.webp', sortOrder: 4 },
+  { name: 'Carnes', slug: 'carnes', imageUrl: '/uploads/imgs/carnes.webp', sortOrder: 5 },
+  { name: 'Embutidos', slug: 'embutidos', imageUrl: '/uploads/imgs/embutidis.webp', sortOrder: 6 },
+  { name: 'Abastos', slug: 'abastos', imageUrl: '/uploads/imgs/abasto.webp', sortOrder: 7 },
+  { name: 'Plásticos', slug: 'plasticos', imageUrl: '/uploads/imgs/plasticos.webp', sortOrder: 8 },
+]
+
+const legacyProducts = [
+  { name: 'Banano (cabeza)', slug: 'banano-cabeza', unit: 'cabeza', price: 2.5, category: 'frutas', description: 'Cabeza de banano ecuatoriano seleccionado.', featured: true },
+  { name: 'Manzana Roja', slug: 'manzana-roja', unit: 'lb', price: 1.6, category: 'frutas', description: 'Manzana roja fresca importada.' },
+]
+
 async function main() {
   console.log('-> seed: admin')
   const passwordHash = await bcrypt.hash(STORE.password, 10)
   const admin = await prisma.user.upsert({
     where: { phone: STORE.phone },
     update: {},
-    create: {
-      name: STORE.name,
-      phone: STORE.phone,
-      email: STORE.email,
-      passwordHash,
-      role: 'ADMIN',
-    },
+    create: { name: STORE.name, phone: STORE.phone, email: STORE.email, passwordHash, role: 'ADMIN' },
   })
   console.log(`   admin listo (${admin.phone})`)
 
   console.log('-> seed: settings')
-  await prisma.settings.upsert({
-    where: { id: 1 },
-    update: {},
-    create: { id: 1, ...settings },
-  })
+  await prisma.settings.upsert({ where: { id: 1 }, update: {}, create: { id: 1, ...settings } })
   console.log('   settings listos')
+
+  const csvPath = path.join(__dirname, 'nuevos-productos.csv')
+  let categories = []
+  let products = []
+  let useCSV = fs.existsSync(csvPath)
+
+  if (useCSV) {
+    const parsed = parseCSV(csvPath)
+    console.log(`-> usando CSV: ${parsed.length} productos`)
+    const catDefs = [
+      { name: 'Legumbres', slug: 'legumbres', sortOrder: 1 },
+      { name: 'Montes', slug: 'montes', sortOrder: 2 },
+      { name: 'Granos', slug: 'granos', sortOrder: 3 },
+      { name: 'Frutas', slug: 'frutas', sortOrder: 4 },
+    ]
+    categories = catDefs
+    // map to product create data later
+    products = parsed
+  } else {
+    categories = legacyCategories
+    products = legacyProducts
+  }
 
   console.log('-> seed: categorías')
   for (const cat of categories) {
-    await prisma.category.upsert({
-      where: { slug: cat.slug },
-      update: { imageUrl: cat.imageUrl },
-      create: cat,
-    })
+    await prisma.category.upsert({ where: { slug: cat.slug }, update: { name: cat.name }, create: cat })
   }
   const cats = await prisma.category.findMany()
+  const catBySlug = Object.fromEntries(cats.map(c => [c.slug, c.id]))
 
   console.log('-> seed: productos')
-  const catBySlug = Object.fromEntries(cats.map((c) => [c.slug, c.id]))
-  for (const p of products) {
-    await prisma.product.upsert({
-      where: { slug: p.slug },
-      update: {},
-      create: {
-        name: p.name,
-        slug: p.slug,
-        unit: p.unit,
-        price: p.price,
-        description: p.description,
-        categoryId: catBySlug[p.category],
-        featured: p.featured || false,
-        imageUrl: null,
-      },
-    })
+  if (useCSV) {
+    const slugSeen = new Set()
+    for (const p of products) {
+      let slug = p.slug
+      let base = slug; let i = 1
+      while (slugSeen.has(slug)) slug = `${base}-${i++}`
+      slugSeen.add(slug)
+      const catSlug = getCategorySlug(p.categoryName)
+      await prisma.product.upsert({
+        where: { slug },
+        update: {},
+        create: {
+          sku: p.sku,
+          name: p.name,
+          slug,
+          unit: p.unit,
+          presentation: p.presentation,
+          minQuantity: p.minQuantity,
+          stepQuantity: p.stepQuantity,
+          price: p.price,
+          description: p.presentation ? `Presentación: ${p.presentation}` : null,
+          categoryId: catBySlug[catSlug],
+          featured: false,
+          stock: -1,
+          imageUrl: null,
+        }
+      })
+    }
+  } else {
+    for (const p of products) {
+      await prisma.product.upsert({
+        where: { slug: p.slug },
+        update: {},
+        create: {
+          name: p.name, slug: p.slug, unit: p.unit, price: p.price,
+          description: p.description, categoryId: catBySlug[p.category],
+          featured: p.featured || false, imageUrl: null,
+          minQuantity: 1, stepQuantity: 1, presentation: null, stock: -1
+        }
+      })
+    }
   }
 
-  const counts = await Promise.all([
-    prisma.user.count(),
-    prisma.category.count(),
-    prisma.product.count(),
-  ])
+  const counts = await Promise.all([prisma.user.count(), prisma.category.count(), prisma.product.count()])
   console.log(`-> seed completo: users=${counts[0]} categorías=${counts[1]} productos=${counts[2]}`)
 }
 
-main()
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+main().catch(e=>{console.error(e);process.exit(1)}).finally(async()=>{await prisma.$disconnect()})

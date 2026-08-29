@@ -23,6 +23,10 @@ const withImageUrl = (item) => {
   if (out.imageUrl && out.imageUrl.startsWith('/')) {
     out.imageUrl = `${config.publicApiUrl}${out.imageUrl}`
   }
+  // normalize decimals for frontend
+  if (out.price != null) out.price = Number(out.price)
+  if (out.minQuantity != null) out.minQuantity = Number(out.minQuantity)
+  if (out.stepQuantity != null) out.stepQuantity = Number(out.stepQuantity)
   return out
 }
 

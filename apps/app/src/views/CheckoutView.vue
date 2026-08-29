@@ -151,7 +151,7 @@
           <h2>Resumen</h2>
           <div class="summary-items">
             <div v-for="item in cart.items" :key="item.productId" class="summary-item">
-              <span>{{ item.name }} × {{ item.quantity }}</span>
+              <span>{{ item.name }} × {{ formatQty(item.quantity) }} {{ item.unit }}<span v-if="item.presentation" class="muted"> · {{ item.presentation }}</span></span>
               <span>{{ money(item.price * item.quantity) }}</span>
             </div>
           </div>
@@ -187,6 +187,11 @@ import DeliverySlotPicker from '../components/DeliverySlotPicker.vue'
 const router = useRouter()
 const cart = useCartStore()
 const settings = useSettingsStore()
+
+function formatQty(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
 
 const loading = ref(true)
 const addresses = ref([])

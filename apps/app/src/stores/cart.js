@@ -32,18 +32,25 @@ export const useCartStore = defineStore('cart', {
     persist() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
     },
-    add(product, quantity = 1) {
+    add(product, quantity = null) {
+      const minQ = Number(product.minQuantity) || 1
+      const step = Number(product.stepQuantity) || 1
+      const qty = quantity != null ? Number(quantity) : minQ
       const existing = this.items.find((i) => i.productId === product.id)
       if (existing) {
-        existing.quantity += quantity
+        existing.quantity = Math.round((existing.quantity + qty) * 100) / 100
       } else {
         this.items.push({
           productId: product.id,
           name: product.name,
+          sku: product.sku || null,
           unit: product.unit,
+          presentation: product.presentation || null,
+          minQuantity: minQ,
+          stepQuantity: step,
           price: discountedPrice(product.price, product.discount),
           imageUrl: product.imageUrl || null,
-          quantity,
+          quantity: qty,
         })
       }
       this.persist()
@@ -53,12 +60,29 @@ export const useCartStore = defineStore('cart', {
       if (!Number.isFinite(quantity)) return
       const item = this.items.find((i) => i.productId === productId)
       if (item) {
+        const minQ = Number(item.minQuantity) || 1
+        if (quantity < minQ - 1e-9) quantity = minQ
         if (quantity <= 0) this.remove(productId)
         else {
-          item.quantity = quantity
+          item.quantity = Math.round(quantity * 100) / 100
           this.persist()
         }
       }
+    },
+    increment(productId) {
+      const item = this.items.find((i) => i.productId === productId)
+      if (!item) return
+      const step = Number(item.stepQuantity) || 1
+      this.setQuantity(productId, Math.round((item.quantity + step) * 100) / 100)
+    },
+    decrement(productId) {
+      const item = this.items.find((i) => i.productId === productId)
+      if (!item) return
+      const step = Number(item.stepQuantity) || 1
+      const minQ = Number(item.minQuantity) || 1
+      const next = Math.round((item.quantity - step) * 100) / 100
+      if (next < minQ - 1e-9) this.remove(productId)
+      else this.setQuantity(productId, next)
     },
     remove(productId) {
       this.items = this.items.filter((i) => i.productId !== productId)

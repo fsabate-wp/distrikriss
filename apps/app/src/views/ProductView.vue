@@ -12,22 +12,32 @@
             {{ product.category.name }}
           </router-link>
           <h1>{{ product.name }}</h1>
-          <p class="product-unit">Presentación: {{ product.unit }}</p>
+          <p class="product-unit">
+            Unidad: {{ product.unit }}
+            <span v-if="product.presentation"> · {{ product.presentation }}</span>
+            <span v-if="product.minQuantity"> · Mínimo {{ formatQty(product.minQuantity) }} {{ product.unit }}</span>
+          </p>
+          <p v-if="product.presentation" class="product-presentation">Empaque: {{ product.presentation }}</p>
           <p v-if="product.description" class="product-desc">{{ product.description }}</p>
           <p class="product-price">
-            {{ money(finalPrice) }}
+            {{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small>
             <span v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</span>
             <span v-if="product.discount && product.discount < 100" class="product-discount">{{ product.discount }}%</span>
+          </p>
+          <p class="muted" style="margin-bottom:12px;font-size:0.85rem">
+            Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ product.unit }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }}</span>
           </p>
 
           <div class="purchase-row">
             <div class="qty-box">
-              <button @click="qty = Math.max(1, qty - 1)">−</button>
-              <input v-model.number="qty" type="number" min="1" />
-              <button @click="qty += 1">+</button>
+              <button @click="decQty">−</button>
+              <input v-model.number="qty" type="number" :min="minQty" :step="stepQty" />
+              <button @click="incQty">+</button>
             </div>
+            <span class="qty-hint">{{ formatQty(qty) }} {{ product.unit }}</span>
             <button class="btn btn-secondary" @click="add">Agregar al carrito</button>
           </div>
+          <p v-if="qty < minQty" class="error-msg">El mínimo es {{ formatQty(minQty) }} {{ product.unit }}</p>
           <p v-if="added" class="added-note">✓ Agregado al carrito</p>
         </div>
       </div>
@@ -55,6 +65,25 @@ const added = ref(false)
 
 const finalPrice = computed(() => discountedPrice(product.value?.price, product.value?.discount))
 const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number(product.value?.discount) < 100)
+const minQty = computed(() => Number(product.value?.minQuantity) || 1)
+const stepQty = computed(() => Number(product.value?.stepQuantity) || 1)
+const unitLabel = computed(() => {
+  const u = (product.value?.unit || '').toLowerCase()
+  if (u === 'kilo') return 'kg'
+  if (u === 'gramos') return 'g'
+  return product.value?.unit || ''
+})
+function formatQty(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+function incQty() {
+  qty.value = Math.round((Number(qty.value) + stepQty.value) * 100) / 100
+}
+function decQty() {
+  const next = Math.round((Number(qty.value) - stepQty.value) * 100) / 100
+  qty.value = Math.max(minQty.value, next)
+}
 
 async function load() {
   loading.value = true
@@ -62,12 +91,15 @@ async function load() {
   try {
     const data = await api.get(`/api/catalog/products/${route.params.slug}`)
     product.value = data.product
+    const mq = Number(data.product?.minQuantity) || 1
+    qty.value = mq
   } finally {
     loading.value = false
   }
 }
 
 function add() {
+  if (Number(qty.value) < minQty.value) qty.value = minQty.value
   cart.add(product.value, qty.value)
   added.value = true
   setTimeout(() => (added.value = false), 2000)

@@ -9,9 +9,15 @@
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
-        <p class="product-unit">{{ product.unit }}</p>
+        <p class="product-unit">
+          {{ product.unit }}
+          <span v-if="product.minQuantity && Number(product.minQuantity) !== 1"> · desde {{ formatQty(product.minQuantity) }} {{ unitLabel }}</span>
+          <span v-else-if="product.presentation"> · {{ product.presentation }}</span>
+          <span v-else-if="product.unit.toLowerCase() === 'kilo'"> · mínimo 1 Kilo</span>
+        </p>
+        <p v-if="product.presentation" class="product-presentation">{{ product.presentation }}</p>
         <div class="product-price-row">
-          <p class="product-price">{{ money(finalPrice) }}</p>
+          <p class="product-price">{{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small></p>
           <p v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</p>
         </div>
       </div>
@@ -35,12 +41,22 @@ const settings = useSettingsStore()
 const discount = computed(() => Number(props.product.discount) || 0)
 const hasDiscount = computed(() => discount.value > 0 && discount.value < 100)
 const finalPrice = computed(() => discountedPrice(props.product.price, props.product.discount))
+const unitLabel = computed(() => {
+  const u = (props.product.unit || '').toLowerCase()
+  if (u === 'kilo') return 'kg'
+  if (u === 'gramos') return 'g'
+  return props.product.unit
+})
+function formatQty(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? n : n.toFixed(2).replace(/\.?0+$/,'')
+}
 
 const storeClosed = () => settings.settings ? settings.settings.storeOpen === false : false
 
 function addToCart() {
   if (storeClosed()) return
-  cart.add(props.product, 1)
+  cart.add(props.product)
 }
 </script>
 
@@ -135,7 +151,20 @@ function addToCart() {
 .product-unit {
   font-size: 0.78rem;
   color: var(--gray);
+  margin-bottom: 2px;
+}
+
+.product-presentation {
+  font-size: 0.72rem;
+  color: var(--gray);
   margin-bottom: 6px;
+  font-style: italic;
+}
+
+.price-suffix {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gray);
 }
 
 .product-price {

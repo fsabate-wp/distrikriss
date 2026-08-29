@@ -23,7 +23,7 @@
           <div class="detail-card">
             <h2>Productos</h2>
             <div v-for="item in order.items" :key="item.id" class="item-row">
-              <span>{{ item.name }} <small class="muted">× {{ item.quantity }} ({{ item.unit }})</small></span>
+              <span>{{ item.name }} <small class="muted">× {{ formatQty(item.quantity) }} {{ item.unit }}<span v-if="item.presentation"> · {{ item.presentation }}</span></small></span>
               <span>{{ money(item.price * item.quantity) }}</span>
             </div>
             <div class="totals">
@@ -90,6 +90,11 @@ import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { money, formatDateLong, formatDateTime, STATUS_LABELS, PAYMENT_LABELS } from '../utils/format.js'
+
+function formatQty(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
 
 const route = useRoute()
 const settings = useSettingsStore()

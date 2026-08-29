@@ -1,0 +1,93 @@
+sku,PRODUCTOS,Unidad,Minimo,PRSENTACION,Precio
+,Legumbres,,,,1
+1,Ají,Gramos,50,Caja de plastico,1
+2,Ajo en cáscara,Kilo,1,Funda,1
+3,Brócoli,Unidad,1,Funda polieteleno,1
+5,Cebolla perla,Kilo,1,Funda de plastico,1
+6,Cebolla roja,Kilo,1,Funda de plastico,1
+7,Champiñones,Gramos,400,Caja de plastico,1
+8,Choclo,Unidad,1,Funda de plastico,1
+9,Col,Pedazo,1,Funda polieteleno,1
+10,Col morada,Unidad,1,Funda polieteleno,1
+11,Coliflor,Unidad,1,Funda polieteleno,1
+13,Espinaca,Gramos,400,Funda poliester,1
+14,Jengibre,Gramos,400,Caja de plastico,1
+15,Lechuga,Unidad,1,Funda polieteleno,1
+16,Lechuga crespa,Unidad,1,Funda poliester,1
+17,Limón,Kilo,1,Malla ,1
+19,Papa chaucha amarilla,Kilo,1,Malla ,1
+20,Papa chaucha roja,Kilo,1,Malla ,1
+21,Papa chola,Kilo,1,Malla ,1
+22,Pepinos,Unidad,1,Malla ,1
+23,Pimiento amarillo,Kilo,1,Bandeja de plastico,1
+24,Pimiento rojo,Kilo,1,Bandeja de plastico,1
+25,Pimiento verde,Kilo,1,Malla ,1
+26,Rábano,Gramos,400,Funda poliester,1
+27,Tomate cherry,Gramos,400,Caja de plastico,1
+28,Tomate serrano,Kilo,1,Malla ,1
+29,Vainita,Kilo,1,Funda poliester,1
+30,Verdura,Atado,1,Funda de plastico,1
+31,Veteraba,Kilo,1,Funda de plastico,1
+32,Yuca ,Kilo,1,Funda de plastico,1
+33,Zambo,Kilo,1,Funda polieteleno,1
+34,Zanahoria blanca,Kilo,1,Funda de plastico,1
+35,Zanahoria,Kilo,1,Malla ,1
+36,Zapallo,Kilo,1,Funda poliester,1
+37,Zuquini,Kilo,1,Malla ,1
+,Montes,,,,
+38,Acelga,Atado,1,Funda de plastico,1
+39,Albahaca,Atado,1,Funda de plastico,1
+40,Apio,Paquete ,1,Funda de plastico,1
+41,Berro,Atado,1,Funda de plastico,1
+42,Cebolla blanca,Paquete,1,Funda de plastico,1
+43,Cebollin,Atado,1,Funda de plastico,1
+44,Flor de jamaica,Kilo,1,Funda de plastico,1
+45,Manzanilla,Atado,1,Funda de plastico,1
+46,Nabo,Paquete,1,Funda de plastico,1
+47,Perejil,Paquete,1,Funda de plastico,1
+48,Romero,Paquete,1,Funda de plastico,1
+49,Ruda,Paquete,1,Funda de plastico,1
+50,Yerba buena,Atado,1,Funda de plastico,1
+51,Culantro,Paquete,1,Funda de plastico,1
+,Granos,,,,
+52,Habichuela,Kilo,1,Funda de plastico,1
+53,Ajo pelado,Kilo,1,Funda de plastico,1
+54,Arveja sin cáscara,Kilo,1,Funda de plastico,1
+55,Choclo desgranado,Kilo,1,Funda de plastico,1
+56,Frejol pelado,Kilo,1,Funda de plastico,1
+57,Haba serrana sin cáscara,Kilo,1,Funda de plastico,1
+58,Haba manaba sin cáscara,Kilo,1,Funda de plastico,1
+59,Melloco,Kilo,1,Funda de plastico,1
+,Frutas,,,,
+60,Aguacate negro,Kilo,1,Funda de plastico,1
+61,Aguacate verde,Kilo,1,Funda de plastico,1
+62,Arándanos,Unida,1,Caja de plastico,1
+65,Durazno,Unidad,1,Funda de plastico,1
+66,Frutilla,Kilo,1,Caja de plastico,1
+67,Granadilla,Unidad,1,Funda de plastico,1
+68,Guayaba,Unidad,1,Funda de plastico,1
+69,Guanabana,Unidad,1,Funda de plastico,1
+70,Kiwi,Unidad,1,Funda de plastico,1
+71,Mandarina serrana,Unidad,1,Funda de plastico,1
+72,Mangos,Unidad,1,Funda de plastico,1
+73,Manzana emilia,Unidad,1,Funda de plastico,1
+74,Manzana roja,Unidad,1,Funda de plastico,1
+75,Manzana verde,Unidad,1,Funda de plastico,1
+76,Maracuyá,Unidad,1,Funda de plastico,1
+77,Melón,Unidad,1,Funda polieteleno,1
+78,Mora ,Kilo,1,Caja de plastico,1
+79,Naranja,Unidad,1,Funda de plastico,1
+80,Naranjilla,Unidad,1,Funda de plastico,1
+81,Papaya,Unidad,1,Funda polieteleno,1
+82,Pera ,Unidad,4,Funda de plastico,1
+83,Piña,Unidad,4,Funda polieteleno,1
+84,Reina Claudia,Unidad,4,Funda de plastico,1
+85,Sandia,Unidad,1,Funda polieteleno,1
+86,Tamarindo,Kilo,1,Caja de plastico,1
+87,Tomatillo,Unidad,4,Funda de plastico,1
+88,Uva negra,Kilo,1,Caja de plastico,1
+89,Uva roja,Kilo,1,Caja de plastico,1
+90,Uva verde,Kilo,1,Caja de plastico,1
+91,Verde barragabete,Unidad,6,Funda polieteleno,1
+92,Verde dominico,Unidad,6,Funda polieteleno,1
+93,Verde maduro,Unidad,6,Funda polieteleno,1

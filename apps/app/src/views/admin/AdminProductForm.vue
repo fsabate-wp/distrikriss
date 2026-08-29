@@ -10,8 +10,33 @@
           <input v-model="form.name" class="form-control" required />
         </div>
         <div class="form-group">
-          <label>Presentación *</label>
-          <input v-model="form.unit" class="form-control" placeholder="Ej: 1 kg, 5 lb, docena" required />
+          <label>SKU</label>
+          <input v-model="form.sku" class="form-control" placeholder="Ej: 1" />
+        </div>
+        <div class="form-group">
+          <label>Unidad *</label>
+          <select v-model="form.unit" class="form-control" required>
+            <option value="Kilo">Kilo</option>
+            <option value="Gramos">Gramos</option>
+            <option value="Unidad">Unidad</option>
+            <option value="Atado">Atado</option>
+            <option value="Paquete">Paquete</option>
+            <option value="Pedazo">Pedazo</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Presentación (empaque)</label>
+          <input v-model="form.presentation" class="form-control" placeholder="Ej: Funda de plástico, Malla, Caja" />
+        </div>
+        <div class="form-group">
+          <label>Mínimo *</label>
+          <input v-model.number="form.minQuantity" type="number" step="0.01" min="0.01" class="form-control" required />
+          <small class="muted">Cantidad mínima que puede pedir el cliente. Ej: 1 para 1 Kilo, 400 para 400g, 4 unidades</small>
+        </div>
+        <div class="form-group">
+          <label>Incremento</label>
+          <input v-model.number="form.stepQuantity" type="number" step="0.01" min="0.01" class="form-control" />
+          <small class="muted">De cuánto en cuánto aumenta (ej: 1 para Kilos, 50 para gramos)</small>
         </div>
         <div class="form-group">
           <label>Precio (USD) *</label>
@@ -103,7 +128,7 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 
-const form = ref({ name: '', unit: '', price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '', ivaRate: null })
+const form = ref({ name: '', sku: '', unit: 'Kilo', presentation: '', minQuantity: 1, stepQuantity: 1, price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '', ivaRate: null })
 const categories = ref([])
 const error = ref('')
 const saving = ref(false)
@@ -133,7 +158,11 @@ async function load() {
     if (p) {
       form.value = {
         name: p.name,
+        sku: p.sku || '',
         unit: p.unit,
+        presentation: p.presentation || '',
+        minQuantity: p.minQuantity != null ? Number(p.minQuantity) : 1,
+        stepQuantity: p.stepQuantity != null ? Number(p.stepQuantity) : 1,
         price: Number(p.price),
         discount: Number(p.discount) || 0,
         stock: p.stock,
