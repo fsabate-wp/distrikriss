@@ -6,6 +6,7 @@
         <div class="product-img-box">
           <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" />
           <span v-else class="product-fallback">{{ product.name[0] }}</span>
+          <span v-if="isOutOfStock" class="outofstock-badge-detail">Sin stock</span>
         </div>
         <div class="product-info">
           <router-link v-if="product.category" :to="{ name: 'home', query: { category: product.category.slug } }" class="product-category">
@@ -28,16 +29,18 @@
             Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ product.unit }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }}</span>
           </p>
 
+          <p v-if="isOutOfStock" class="error-msg" style="margin-bottom:12px;font-weight:700">Producto sin stock — no disponible para agregar al carrito</p>
+
           <div class="purchase-row">
             <div class="qty-box">
-              <button @click="decQty">−</button>
-              <input v-model.number="qty" type="number" :min="minQty" :step="stepQty" />
-              <button @click="incQty">+</button>
+              <button @click="decQty" :disabled="isOutOfStock">−</button>
+              <input v-model.number="qty" type="number" :min="minQty" :step="stepQty" :disabled="isOutOfStock" />
+              <button @click="incQty" :disabled="isOutOfStock">+</button>
             </div>
             <span class="qty-hint">{{ formatQty(qty) }} {{ product.unit }}</span>
-            <button class="btn btn-secondary" @click="add">Agregar al carrito</button>
+            <button class="btn btn-secondary" :disabled="isOutOfStock" @click="add">{{ isOutOfStock ? 'Sin stock' : 'Agregar al carrito' }}</button>
           </div>
-          <p v-if="qty < minQty" class="error-msg">El mínimo es {{ formatQty(minQty) }} {{ product.unit }}</p>
+          <p v-if="!isOutOfStock && qty < minQty" class="error-msg">El mínimo es {{ formatQty(minQty) }} {{ product.unit }}</p>
           <p v-if="added" class="added-note">✓ Agregado al carrito</p>
         </div>
       </div>
@@ -65,6 +68,7 @@ const added = ref(false)
 
 const finalPrice = computed(() => discountedPrice(product.value?.price, product.value?.discount))
 const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number(product.value?.discount) < 100)
+const isOutOfStock = computed(() => product.value != null && Number(product.value.stock) === 0)
 const minQty = computed(() => Number(product.value?.minQuantity) || 1)
 const stepQty = computed(() => Number(product.value?.stepQuantity) || 1)
 const unitLabel = computed(() => {
@@ -99,8 +103,10 @@ async function load() {
 }
 
 function add() {
+  if (isOutOfStock.value) return
   if (Number(qty.value) < minQty.value) qty.value = minQty.value
-  cart.add(product.value, qty.value)
+  const ok = cart.add(product.value, qty.value)
+  if (!ok) return
   added.value = true
   setTimeout(() => (added.value = false), 2000)
 }
@@ -125,6 +131,20 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.outofstock-badge-detail {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  background: rgba(220, 53, 69, 0.95);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
 }
 
 .product-img-box img {

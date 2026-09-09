@@ -7,7 +7,6 @@
       <ul class="navbar-links" :class="{ open: menuOpen }">
         <li><a href="#productos" @click="menuOpen = false">Productos</a></li>
         <li><a href="#nosotros" @click="menuOpen = false">Por qué nosotros</a></li>
-        <li><a href="#ubicacion" @click="menuOpen = false">Ubicación</a></li>
         <li><a href="#contacto" @click="menuOpen = false">Contacto</a></li>
         <li class="navbar-cta-mobile"><a :href="appUrl + '/registro'" @click="menuOpen = false">Crear cuenta</a></li>
       </ul>

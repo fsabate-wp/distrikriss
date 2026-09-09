@@ -6,6 +6,7 @@ import {
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
+  accessCookieOptions,
   refreshCookieOptions,
 } from '../lib/jwt.js'
 import { requireAuth } from '../middleware/auth.js'
@@ -34,10 +35,7 @@ const loginSchema = z.object({
 
 function setAuthCookies(res, user) {
   res.cookie('refresh_token', signRefreshToken(user), refreshCookieOptions('/api/auth'))
-  res.cookie('access_token', signAccessToken(user), {
-    ...refreshCookieOptions('/'),
-    maxAge: 15 * 60 * 1000,
-  })
+  res.cookie('access_token', signAccessToken(user), accessCookieOptions('/'))
 }
 
 router.post('/register', async (req, res, next) => {
@@ -106,7 +104,7 @@ router.post('/refresh', async (req, res, next) => {
 
 router.post('/logout', (req, res) => {
   res.clearCookie('refresh_token', refreshCookieOptions('/api/auth'))
-  res.clearCookie('access_token', refreshCookieOptions('/'))
+  res.clearCookie('access_token', accessCookieOptions('/'))
   res.json({ ok: true })
 })
 

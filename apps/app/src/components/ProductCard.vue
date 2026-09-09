@@ -1,11 +1,12 @@
 <template>
-  <div class="product-card" :class="{ 'is-featured': product.featured }">
+  <div class="product-card" :class="{ 'is-featured': product.featured, 'is-outofstock': isOutOfStock }">
     <router-link :to="`/producto/${product.slug}`" class="product-link">
       <div class="product-img">
         <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
         <span v-else class="product-fallback">{{ product.name[0] }}</span>
         <span v-if="product.featured" class="featured-badge">★ Destacado</span>
         <span v-if="hasDiscount" class="discount-badge">{{ discount }}%</span>
+        <span v-if="isOutOfStock" class="outofstock-badge">Sin stock</span>
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
@@ -22,7 +23,7 @@
         </div>
       </div>
     </router-link>
-    <button class="add-btn" :disabled="storeClosed()" @click="addToCart" aria-label="Agregar al carrito">
+    <button class="add-btn" :disabled="storeClosed() || isOutOfStock" @click="addToCart" aria-label="Agregar al carrito">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     </button>
   </div>
@@ -41,6 +42,7 @@ const settings = useSettingsStore()
 const discount = computed(() => Number(props.product.discount) || 0)
 const hasDiscount = computed(() => discount.value > 0 && discount.value < 100)
 const finalPrice = computed(() => discountedPrice(props.product.price, props.product.discount))
+const isOutOfStock = computed(() => Number(props.product.stock) === 0)
 const unitLabel = computed(() => {
   const u = (props.product.unit || '').toLowerCase()
   if (u === 'kilo') return 'kg'
@@ -55,7 +57,7 @@ function formatQty(v) {
 const storeClosed = () => settings.settings ? settings.settings.storeOpen === false : false
 
 function addToCart() {
-  if (storeClosed()) return
+  if (storeClosed() || isOutOfStock.value) return
   cart.add(props.product)
 }
 </script>
@@ -72,6 +74,11 @@ function addToCart() {
 
 .product-card.is-featured {
   border-color: var(--green-light);
+}
+
+.product-card.is-outofstock .product-img img {
+  opacity: 0.55;
+  filter: grayscale(0.3);
 }
 
 .product-card:hover {
@@ -122,6 +129,20 @@ function addToCart() {
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow);
+}
+
+.outofstock-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: rgba(220, 53, 69, 0.95);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
+  letter-spacing: 0.3px;
 }
 
 .product-img img {

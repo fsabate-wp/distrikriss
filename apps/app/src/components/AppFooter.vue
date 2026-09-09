@@ -6,7 +6,6 @@
         <p class="muted">Lo Mejor en precio y calidad</p>
       </div>
       <div v-if="settings.settings" class="footer-info">
-        <p><strong>{{ settings.settings.storeAddress }}</strong></p>
         <p>{{ settings.settings.phone }} · {{ settings.settings.whatsapp }}</p>
       </div>
     </div>

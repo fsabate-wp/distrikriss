@@ -33,6 +33,8 @@ export const useCartStore = defineStore('cart', {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
     },
     add(product, quantity = null) {
+      // bloqueo en capa store: productos con stock 0 no pueden agregarse
+      if (Number(product.stock) === 0) return false
       const minQ = Number(product.minQuantity) || 1
       const step = Number(product.stepQuantity) || 1
       const qty = quantity != null ? Number(quantity) : minQ
@@ -54,6 +56,7 @@ export const useCartStore = defineStore('cart', {
         })
       }
       this.persist()
+      return true
     },
     setQuantity(productId, quantity) {
       quantity = Number(quantity)

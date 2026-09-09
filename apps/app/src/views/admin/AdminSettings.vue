@@ -31,7 +31,6 @@ const route = useRoute()
 const tabs = [
   { to: '/admin/configuracion', label: 'General' },
   { to: '/admin/configuracion/apariencia', label: 'Apariencia' },
-  { to: '/admin/configuracion/entregas', label: 'Entregas' },
   { to: '/admin/configuracion/zonas', label: 'Zonas' },
   { to: '/admin/configuracion/horarios', label: 'Horarios' },
   { to: '/admin/configuracion/pagos', label: 'Pagos' },

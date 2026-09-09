@@ -3,6 +3,17 @@
     <div v-if="loading" class="spinner"></div>
 
     <div v-else>
+      <div class="admin-card cutoff-card" style="margin-bottom:20px">
+        <h2>Hora límite de pedidos</h2>
+        <p class="muted">Pedidos después de esta hora se programan para el siguiente día de entrega disponible.</p>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">
+          <input v-model="orderCutoff" type="time" class="form-control" style="max-width:160px" />
+          <button type="button" class="btn btn-primary" :disabled="cutoffSaving" @click="saveCutoff">{{ cutoffSaving ? 'Guardando…' : 'Guardar hora' }}</button>
+        </div>
+        <p v-if="cutoffSaved" class="saved-note" style="margin-top:8px">✓ Hora guardada</p>
+        <p v-if="cutoffError" class="error-msg">{{ cutoffError }}</p>
+      </div>
+
       <div class="admin-toolbar">
         <button type="button" class="btn btn-primary" @click="newZone">+ Nueva zona</button>
         <p class="muted zones-hint">Dibuja el polígono en el mapa y completa los datos de la zona.</p>
@@ -156,6 +167,10 @@ const saving = ref(false)
 const deleting = ref(false)
 const error = ref('')
 const saved = ref(false)
+const orderCutoff = ref('18:00')
+const cutoffSaving = ref(false)
+const cutoffSaved = ref(false)
+const cutoffError = ref('')
 const settingsStore = useSettingsStore()
 
 const mapEl = ref(null)
@@ -196,6 +211,30 @@ async function loadZones() {
     error.value = err.message
   } finally {
     loading.value = false
+  }
+}
+
+async function loadCutoff() {
+  try {
+    const data = await api.get('/api/admin/settings')
+    if (data.settings?.orderCutoff) orderCutoff.value = data.settings.orderCutoff
+  } catch (err) {
+    cutoffError.value = err.message
+  }
+}
+
+async function saveCutoff() {
+  cutoffError.value = ''
+  cutoffSaved.value = false
+  cutoffSaving.value = true
+  try {
+    await api.put('/api/admin/settings', { orderCutoff: orderCutoff.value })
+    cutoffSaved.value = true
+    setTimeout(() => (cutoffSaved.value = false), 2500)
+  } catch (err) {
+    cutoffError.value = err.message
+  } finally {
+    cutoffSaving.value = false
   }
 }
 
@@ -381,6 +420,7 @@ async function deleteZone() {
 onMounted(async () => {
   await settingsStore.load()
   await loadZones()
+  await loadCutoff()
   await nextTick()
   ensureMap()
 })

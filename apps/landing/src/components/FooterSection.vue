@@ -8,7 +8,6 @@
       <div class="footer-links">
         <a href="#productos">Productos</a>
         <a href="#nosotros">Nosotros</a>
-        <a href="#ubicacion">Ubicación</a>
         <a href="#contacto">Contacto</a>
       </div>
       <div class="footer-social">

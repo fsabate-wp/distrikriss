@@ -8,7 +8,7 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'dev-secret',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
-    accessTtl: process.env.ACCESS_TOKEN_TTL || '15m',
+    accessTtl: process.env.ACCESS_TOKEN_TTL || '7d',
     refreshTtl: process.env.REFRESH_TOKEN_TTL || '30d',
   },
   cookieSecure: process.env.COOKIE_SECURE === 'true',

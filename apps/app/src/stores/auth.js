@@ -12,7 +12,16 @@ export const useAuthStore = defineStore('auth', {
     isAdmin: (s) => s.user?.role === 'ADMIN',
   },
   actions: {
+    initExpiredListener() {
+      if (typeof window !== 'undefined' && !window.__authExpiredListener) {
+        window.__authExpiredListener = true
+        window.addEventListener('auth:expired', () => {
+          this.user = null
+        })
+      }
+    },
     async fetchMe() {
+      this.initExpiredListener()
       try {
         const data = await api.get('/api/auth/me')
         this.user = data.user

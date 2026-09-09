@@ -4,6 +4,7 @@
       <div class="auth-card">
         <h1 class="section-title">Ingresar</h1>
         <p class="muted auth-sub">Bienvenido de vuelta a DistriKriss</p>
+        <div v-if="expiredMsg" class="expired-banner">{{ expiredMsg }}</div>
 
         <form @submit.prevent="submit">
           <div class="form-group">
@@ -30,7 +31,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 
@@ -39,11 +40,37 @@ const router = useRouter()
 const route = useRoute()
 const form = reactive({ identifier: '', password: '' })
 const error = ref('')
+const expiredMsg = ref('')
+
+onMounted(() => {
+  if (route.query.expired === '1') {
+    expiredMsg.value = 'Tu sesión expiró, por favor inicia sesión de nuevo.'
+  } else {
+    try {
+      if (sessionStorage.getItem('sessionExpired') === '1') {
+        expiredMsg.value = 'Tu sesión expiró, por favor inicia sesión de nuevo.'
+        sessionStorage.removeItem('sessionExpired')
+      }
+    } catch {}
+  }
+})
 
 async function submit() {
   error.value = ''
   try {
     await auth.login(form)
+    try { sessionStorage.removeItem('sessionExpired'); sessionStorage.removeItem('redirectAfterLogin') } catch {}
+    // Si es admin, redirigir al dashboard automáticamente
+    if (auth.isAdmin) {
+      const redirect = route.query.redirect
+      // si el redirect ya es una ruta admin, respetarlo; sino ir al dashboard
+      if (typeof redirect === 'string' && redirect.startsWith('/admin')) {
+        router.push(redirect)
+      } else {
+        router.push({ name: 'admin' })
+      }
+      return
+    }
     router.push(route.query.redirect || { name: 'home' })
   } catch (err) {
     error.value = err.message
@@ -75,6 +102,18 @@ async function submit() {
 
 .auth-sub {
   margin-bottom: 28px;
+}
+
+.expired-banner {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffe69c;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 18px;
+  text-align: center;
 }
 
 .auth-switch {

@@ -17,13 +17,7 @@
           <p>095 984 1957</p>
           <span class="contact-cta">Escríbenos ahora</span>
         </a>
-        <div class="contact-card">
-          <div class="contact-icon location-icon">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          </div>
-          <h3>Dirección</h3>
-          <p>Cdla. Guangala villa 24<br />Mz. E7</p>
-        </div>
+
         <div class="contact-card">
           <div class="contact-icon schedule-icon">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -51,7 +45,7 @@
 
 .contact-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 24px;
 }
 

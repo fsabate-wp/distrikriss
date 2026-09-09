@@ -4,6 +4,9 @@
     <div v-if="settings.settings && settings.settings.storeOpen === false" class="closed-banner">
       La tienda está temporalmente cerrada. Vuelve más tarde.
     </div>
+    <div v-if="showExpiredToast" class="session-toast">
+      Tu sesión expiró. Redirigiendo al login…
+    </div>
     <main>
       <router-view />
     </main>
@@ -15,6 +18,7 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import AppFooter from './components/AppFooter.vue'
 import CartDrawer from './components/CartDrawer.vue'
@@ -27,8 +31,11 @@ import { applySecondaryColor } from './lib/accent.js'
 import { applyBranding } from './lib/branding.js'
 
 const cartOpen = ref(false)
+const showExpiredToast = ref(false)
+let toastTimer = null
 const auth = useAuthStore()
 const settings = useSettingsStore()
+const router = useRouter()
 
 function applyVisuals() {
   applyAccentColor(settings.settings?.accentColor)
@@ -38,9 +45,20 @@ function applyVisuals() {
 
 onMounted(async () => {
   if (!auth.initialized) await auth.fetchMe()
+  else auth.initExpiredListener?.()
   await settings.load()
   applyVisuals()
   if (auth.isAuthed) registerPush()
+  window.addEventListener('auth:expired', () => {
+    showExpiredToast.value = true
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => { showExpiredToast.value = false }, 4000)
+    const currentPath = window.location.pathname + window.location.search
+    const isAuthPage = currentPath.startsWith('/login') || currentPath.startsWith('/registro')
+    if (!isAuthPage && router.currentRoute.value.name !== 'login') {
+      router.push({ name: 'login', query: { redirect: currentPath, expired: '1' } }).catch(() => {})
+    }
+  })
 })
 
 watch(
@@ -70,5 +88,18 @@ watch(
   font-weight: 700;
   font-size: 0.9rem;
   padding: 10px 16px;
+}
+.session-toast {
+  background: #dc3545;
+  color: white;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 10px 16px;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
