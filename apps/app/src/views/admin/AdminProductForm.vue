@@ -50,12 +50,19 @@
           <label>IVA</label>
           <select v-model="form.ivaRate" class="form-control">
             <option :value="null">Tarifa de la tienda ({{ storeIvaLabel }})</option>
-            <option :value="0">IVA 0%</option>
-            <option :value="5">IVA 5%</option>
-            <option :value="12">IVA 12%</option>
-            <option :value="15">IVA 15%</option>
+            <option v-for="t in ivaRates" :key="t" :value="t">IVA {{ t }}%</option>
           </select>
-          <small class="muted">Déjalo en "Tarifa de la tienda" salvo que este producto pague una tarifa distinta (o nada) de IVA.</small>
+          <small class="muted">
+            Solo tarifas del catálogo del SRI. Déjalo en "Tarifa de la tienda" salvo que este producto pague otra
+            tarifa o esté exonerado.
+          </small>
+        </div>
+        <div class="form-group">
+          <label>Código SRI</label>
+          <input v-model="form.sriCode" type="text" maxlength="25" class="form-control" placeholder="Opcional" />
+          <small class="muted">
+            Código de la tarifa arancelaria del SRI. Solo si lo exige el tipo de commodity; si no, déjalo vacío.
+          </small>
         </div>
         <div class="form-group">
           <label>Stock</label>
@@ -128,8 +135,11 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 
-const form = ref({ name: '', sku: '', unit: 'Kilo', presentation: '', minQuantity: 1, stepQuantity: 1, price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '', ivaRate: null })
+const form = ref({ name: '', sku: '', unit: 'Kilo', presentation: '', minQuantity: 1, stepQuantity: 1, price: 0, discount: 0, stock: -1, categoryId: null, active: true, featured: false, description: '', imageUrl: '', ivaRate: null, sriCode: '' })
 const categories = ref([])
+// Catálogo de tarifas del SRI. Cualquier valor fuera de esta lista es rechazado
+// por el servidor al construir el XML.
+const ivaRates = [0, 2, 3, 4, 5, 10, 12, 14, 15]
 const error = ref('')
 const saving = ref(false)
 const uploading = ref(false)
@@ -172,6 +182,7 @@ async function load() {
         description: p.description || '',
         imageUrl: p.imageUrl || '',
         ivaRate: p.ivaRate != null ? Number(p.ivaRate) : null,
+        sriCode: p.sriCode || '',
       }
     }
   } catch (err) {

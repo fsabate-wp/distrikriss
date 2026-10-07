@@ -53,13 +53,21 @@ export const PAYMENT_LABELS = {
 }
 
 export const INVOICE_STATUS_LABELS = {
-  AUTHORIZED: 'Autorizada',
-  SIGNED: 'Firmada / enviando',
-  PENDING: 'Pendiente',
-  NO_CERTIFICATE: 'Sin certificado',
+  AUTHORIZED: 'Autorizada por el SRI',
+  RECEIVED: 'Recibida, esperando autorización',
+  SIGNED: 'Firmada, enviando',
+  DRAFT: 'Preparada',
+  NO_CERTIFICATE: 'Error del certificado',
   REJECTED: 'Rechazada por el SRI',
   NOT_AUTHORIZED: 'No autorizada',
   FAILED: 'Error de envío',
+  CREDITED: 'Anulada con nota de crédito',
 }
+
+/** Estados en los que no tiene sentido reintentar: el SRI ya dio su respuesta. */
+export const INVOICE_TERMINAL_STATUSES = ['AUTHORIZED', 'NOT_AUTHORIZED', 'REJECTED', 'CREDITED']
+
+/** Estados que requieren la atención del administrador. */
+export const INVOICE_PROBLEM_STATUSES = ['NO_CERTIFICATE', 'REJECTED', 'NOT_AUTHORIZED', 'FAILED']
 
 export const WEEKDAYS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']

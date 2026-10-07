@@ -9,9 +9,12 @@ import {
   accessCookieOptions,
   refreshCookieOptions,
 } from '../lib/jwt.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, requireTrustedOrigin, limits } from '../middleware/auth.js'
 
 const router = Router()
+// Origen confiable antes de tocar nada: el login y el registro cambian estado
+// usando solo cookies.
+router.use(requireTrustedOrigin)
 
 const publicUser = (user) => ({
   id: user.id,
@@ -38,7 +41,7 @@ function setAuthCookies(res, user) {
   res.cookie('access_token', signAccessToken(user), accessCookieOptions('/'))
 }
 
-router.post('/register', async (req, res, next) => {
+router.post('/register', limits.register, async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body)
     const phone = data.phone.trim()
@@ -64,7 +67,7 @@ router.post('/register', async (req, res, next) => {
   }
 })
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', limits.login, async (req, res, next) => {
   try {
     const { identifier, password } = loginSchema.parse(req.body)
     const user = await prisma.user.findFirst({
@@ -103,8 +106,14 @@ router.post('/refresh', async (req, res, next) => {
 })
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('refresh_token', refreshCookieOptions('/api/auth'))
-  res.clearCookie('access_token', accessCookieOptions('/'))
+  // clearCookie no admite maxAge (Express 5 lo ignora y avisa por consola), asi
+  // que se reutilizan las opciones sin ese campo.
+  const refreshOpts = { ...refreshCookieOptions('/api/auth') }
+  const accessOpts = { ...accessCookieOptions('/') }
+  delete refreshOpts.maxAge
+  delete accessOpts.maxAge
+  res.clearCookie('refresh_token', refreshOpts)
+  res.clearCookie('access_token', accessOpts)
   res.json({ ok: true })
 })
 

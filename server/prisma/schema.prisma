@@ -26,25 +26,47 @@ enum PaymentMethod {
   COD
 }
 
+// Estados del comprobante electrónico. Se modelan como enum (y no como String)
+// para que un estado mal escrito no pase silenciosamente a producción.
+enum InvoiceStatus {
+  DRAFT
+  SIGNED
+  RECEIVED
+  AUTHORIZED
+  NOT_AUTHORIZED
+  REJECTED
+  NO_CERTIFICATE
+  FAILED
+  // Comprobante anulado por nota de crédito (el original se conserva).
+  CREDITED
+}
+
+// Documento que genera la numeración. Cada serie tiene su propio correlativo atómico.
+enum SriDocType {
+  FACTURA // 01
+  NOTA_CREDITO // 07
+  NOTA_DEBITO // 08
+}
+
 model User {
-  id           String            @id @default(cuid())
+  id           String             @id @default(cuid())
   name         String
-  phone        String            @unique
-  email        String?           @unique
+  phone        String             @unique
+  email        String?            @unique
   passwordHash String
-  role         Role              @default(CLIENT)
-  active       Boolean           @default(true)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  role         Role               @default(CLIENT)
+  active       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
   addresses    Address[]
   orders       Order[]
   pushSubs     PushSubscription[]
 }
 
 model Address {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   label     String
   street    String
   number    String?
@@ -52,7 +74,7 @@ model Address {
   city      String
   lat       Float
   lng       Float
-  isDefault Boolean @default(false)
+  isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   orders    Order[]
 }
@@ -69,26 +91,28 @@ model Category {
 }
 
 model Product {
-  id           String   @id @default(cuid())
-  sku          String?  @unique
+  id           String      @id @default(cuid())
+  sku          String?     @unique
   name         String
-  slug         String   @unique
+  slug         String      @unique
   description  String?
-  price        Decimal  @db.Decimal(10, 2)
+  price        Decimal     @db.Decimal(10, 2)
   unit         String
   presentation String?
-  minQuantity  Decimal  @default(1) @db.Decimal(10, 2)
-  stepQuantity Decimal  @default(1) @db.Decimal(10, 2)
-  stock        Int      @default(-1)
+  minQuantity  Decimal     @default(1) @db.Decimal(10, 2)
+  stepQuantity Decimal     @default(1) @db.Decimal(10, 2)
+  stock        Int         @default(-1)
   imageUrl     String?
-  active       Boolean  @default(true)
-  featured     Boolean  @default(false)
-  discount     Int      @default(0)
+  active       Boolean     @default(true)
+  featured     Boolean     @default(false)
+  discount     Int         @default(0)
   ivaRate      Int?
+  // Codigo de la tarifa arancelaria SRI (codigoSRI / nombreCodigoSRI del XML).
+  sriCode      String?
   categoryId   String?
-  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  category     Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   orderItems   OrderItem[]
 }
 
@@ -101,13 +125,13 @@ model Order {
   paymentMethod   PaymentMethod
   paymentStatus   String        @default("PENDING")
   subtotal        Decimal       @db.Decimal(10, 2)
-  deliveryFee     Decimal       @db.Decimal(10, 2) @default(0)
+  deliveryFee     Decimal       @default(0) @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2)
   deliveryDate    DateTime
   slotId          String
   slotLabel       String
   addressId       String?
-  address         Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  address         Address?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
   addressSnapshot Json
   notes           String?
   billingType     String        @default("CONSUMO_FINAL")
@@ -120,18 +144,24 @@ model Order {
 }
 
 model OrderItem {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   orderId      String
-  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId    String?
   product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   name         String
   sku          String?
   unit         String
   presentation String?
-  price        Decimal @db.Decimal(10, 2)
-  quantity     Decimal @db.Decimal(10, 2)
+  price        Decimal  @db.Decimal(10, 2)
+  quantity     Decimal  @db.Decimal(10, 2)
   ivaRate      Decimal? @db.Decimal(4, 2)
+  // Snapshot del descuento aplicado en el pedido. Sin esto la factura electronic
+  // no puede emitir <descuento> y el XML queda discordante con lo que se cobro.
+  discountPct  Int      @default(0)
+  // Precio de lista antes del descuento. Sirve para reconstruir y auditar la linea.
+  listPrice    Decimal? @db.Decimal(10, 2)
+  sriCode      String?
 }
 
 model OrderEvent {
@@ -144,44 +174,73 @@ model OrderEvent {
 }
 
 model Settings {
-  id                      Int      @id @default(1)
-  storeName               String   @default("DistriKriss")
-  accentColor             String   @default("#1B5E20")
-  secondaryColor          String   @default("#1B5E20")
-  storeOpen               Boolean  @default(true)
-  faviconUrl              String   @default("")
-  appIconUrl              String   @default("")
-  currency                String   @default("USD")
-  phone                   String   @default("")
-  whatsapp                String   @default("")
-  email                   String   @default("")
-  storeAddress            String   @default("")
-  storeLat                Float
-  storeLng                Float
-  deliveryRadiusKm        Float    @default(5)
-  deliveryFeeBase         Decimal  @default(0) @db.Decimal(10, 2)
-  deliveryFeePerKm        Decimal  @default(0) @db.Decimal(10, 2)
-  minOrderAmount          Decimal  @default(0) @db.Decimal(10, 2)
-  orderCutoff             String   @default("18:00")
-  deliveryDays            Json
-  openHours               Json
-  slots                   Json
-  bankTransfer            Json
-  ruc                     String   @default("")
-  businessName            String   @default("")
-  tradeName               String   @default("")
-  sriEnabled              Boolean  @default(false)
-  sriEnvironment          Int      @default(2)
-  sriEstablishment        String   @default("003")
-  sriEmissionPoint        String   @default("001")
-  sriCertificateFile      String   @default("")
-  sriCertificatePassword  String   @default("")
-  sriObligadoContabilidad Boolean  @default(true)
-  sriSpecialContributor   String   @default("")
-  sriAddress              String   @default("")
-  sriAccountingResolution String   @default("")
-  sriIvaRate              Decimal  @default(15) @db.Decimal(4, 2)
-  updatedAt               DateTime @updatedAt
+  id                        Int      @id @default(1)
+  storeName                 String   @default("DistriKriss")
+  accentColor               String   @default("#1B5E20")
+  secondaryColor            String   @default("#1B5E20")
+  storeOpen                 Boolean  @default(true)
+  faviconUrl                String   @default("")
+  appIconUrl                String   @default("")
+  currency                  String   @default("USD")
+  phone                     String   @default("")
+  whatsapp                  String   @default("")
+  email                     String   @default("")
+  storeAddress              String   @default("")
+  storeLat                  Float
+  storeLng                  Float
+  deliveryRadiusKm          Float    @default(5)
+  deliveryFeeBase           Decimal  @default(0) @db.Decimal(10, 2)
+  deliveryFeePerKm          Decimal  @default(0) @db.Decimal(10, 2)
+  minOrderAmount            Decimal  @default(0) @db.Decimal(10, 2)
+  orderCutoff               String   @default("18:00")
+  deliveryDays              Json
+  openHours                 Json
+  slots                     Json
+bankTransfer Json
+  // Datos bancarios cifrados en reposo (AES-256-GCM, misma clave que el
+  // certificado). Se expone al cliente solo cuando hay transferencia habilitada.
+  bankTransferEnc         String   @default("")
+  ruc                       String   @default("")
+  businessName              String   @default("")
+  tradeName                 String   @default("")
+  sriEnabled                Boolean  @default(false)
+  sriEnvironment            Int      @default(2)
+  sriEstablishment          String   @default("003")
+  sriEmissionPoint          String   @default("001")
+  sriCertificateFile        String   @default("")
+  // Contraseña del .p12 cifrada con AES-256-GCM (SRI_CERT_SECRET).
+  // Nunca se devuelve en ninguna respuesta de la API.
+  sriCertificatePasswordEnc String   @default("")
+  // Huella del archivo .p12 que se uso para cifrar la contraseña, para detectar
+  // que el certificado fue reemplazado y volver a pedir la contraseña.
+  sriCertificatePasswordFor String   @default("")
+  sriObligadoContabilidad   Boolean  @default(true)
+  sriSpecialContributor     String   @default("")
+  sriAddress                String   @default("")
+  sriAccountingResolution   String   @default("")
+  sriIvaRate                Decimal  @default(15) @db.Decimal(4, 2)
+  // Si el servicio de entrega lleva IVA. En algunos regímenes esta exonerado.
+  sriDeliveryTaxable        Boolean  @default(true)
+  updatedAt                 DateTime @updatedAt
+}
+
+// Registro de acciones sensibles sobre la configuracion fiscal. Cambiar el RUC,
+// el ambiente o el certificado sin dejar rastro es indefendible ante el SRI.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorRole String?
+  actorName String?
+  action    String
+  target    String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model DeliveryZone {
@@ -201,23 +260,101 @@ model DeliveryZone {
 }
 
 model Invoice {
-  id                  String    @id @default(cuid())
-  orderId             String    @unique
-  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id                  String         @id @default(cuid())
+  orderId             String         @unique
+  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  docType             SriDocType     @default(FACTURA)
   establishment       String
   emissionPoint       String
   sequential          Int
-  number              String    @unique
-  accessKey           String
-  status              String    @default("PENDING")
-  xml                 String?   @db.Text
+  number              String         @unique
+  accessKey           String         @unique
+  // Ambiente con el que se emitio. Sin esto no se distingue una factura de
+  // pruebas de una real tras cambiar de ambiente.
+  environment         Int
+  status              InvoiceStatus  @default(DRAFT)
+  // Fecha (America/Guayaquil) usada tanto en la clave de acceso como en
+  // <fechaEmision>. El SRI rechaza el comprobante si no coinciden.
+  issueDate           DateTime
+  xml                 String?        @db.Text
+  // Respuesta cruda de recepcion y de autorizacion del SRI, para auditoria.
+  receptionResponse   String?        @db.Text
+  authorizationXml    String?        @db.Text
   authorizationNumber String?
   authorizationDate   DateTime?
+  // "comprobante" que devuelve el SRI al autorizar: es el CLAVEACCESO con el que
+  // se arma el QR de la RIDE. Sin este valor el cliente no puede validar la factura.
+  authorizationProof  String?
   responseCode        String?
   responseMessage     String?
-  retryCount          Int       @default(0)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  // Total que produjo el constructor del XML. Se contrasta contra order.total
+  // antes de firmar; si difieren, la emision se aborta.
+  totalFiscal         Decimal        @db.Decimal(12, 2)
+  reconciledAt        DateTime?
+  signedAt            DateTime?
+  sentAt              DateTime?
+  retryCount          Int            @default(0)
+  nextRetryAt         DateTime?
+  lastAttemptAt       DateTime?
+  // Nota de credito que anula este comprobante (un comprobante -> como maximo una NC).
+  creditedById        String?        @unique
+  creditedBy          Invoice?       @relation("CreditNote", fields: [creditedById], references: [id], onDelete: SetNull)
+  credits             Invoice[]      @relation("CreditNote")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  events              InvoiceEvent[]
+
+  @@unique([docType, establishment, emissionPoint, sequential])
+  @@index([status, nextRetryAt])
+  @@index([accessKey])
+}
+
+// Bitacora inmutable de todo lo que le pasa a un comprobante. Una vez autorizada
+// una factura, su historia tiene que poder reconstruirse ante el SRI.
+model InvoiceEvent {
+  id        String         @id @default(cuid())
+  invoiceId String
+  invoice   Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  event     String
+  status    InvoiceStatus?
+  actorId   String?
+  actorRole String?
+  detail    String?
+  ip        String?
+  createdAt DateTime       @default(now())
+
+  @@index([invoiceId, createdAt])
+}
+
+// Correlativo por serie. El numero se incrementa con UPDATE ... RETURNING dentro de
+// una transaccion, de modo que dos emisiones concurrentes nunca obtienen el mismo
+// secuencial (lo que produciria claves de acceso duplicadas).
+// Correlativo de codigo de pedido. Se incrementa de forma atomica porque
+// Order.code es UNIQUE y count()+1 producia colisiones bajo concurrencia.
+model OrderSequence {
+  id        String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// Fila de bloqueo por horario de entrega. PostgreSQL no admite FOR UPDATE con
+// agregados, así que la reserva bloquea esta fila antes de contar la ocupación.
+model SlotLock {
+  slotKey   String   @id
+  updatedAt DateTime @updatedAt
+}
+
+model DocumentSeries {
+  id            String     @id @default(cuid())
+  docType       SriDocType
+  establishment String
+  emissionPoint String
+  sequential    Int        @default(0)
+  lastAccessKey String?
+  lastIssuedAt  DateTime?
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([docType, establishment, emissionPoint])
 }
 
 model PushSubscription {

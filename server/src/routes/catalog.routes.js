@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma.js'
 import { config } from '../config.js'
+import { precioConDescuento } from '../lib/precios.js'
 
 const router = Router()
 
@@ -27,6 +28,11 @@ const withImageUrl = (item) => {
   if (out.price != null) out.price = Number(out.price)
   if (out.minQuantity != null) out.minQuantity = Number(out.minQuantity)
   if (out.stepQuantity != null) out.stepQuantity = Number(out.stepQuantity)
+  // El precio final de venta viaja ya calculado: el cliente no puede equivocarse
+  // al aplicar el descuento, y el servidor cobra exactamente este valor.
+  if (out.price != null) {
+    out.finalPrice = precioConDescuento(out.price, out.discount)
+  }
   return out
 }
 
@@ -45,7 +51,7 @@ router.get('/categories', async (req, res, next) => {
 
 router.get('/products', async (req, res, next) => {
   try {
-    const { category, search, sort, limit = 60, featured } = req.query
+    const { category, search, sort, limit = 60, featured, all } = req.query
     const where = { active: true }
     if (featured === 'true') where.featured = true
     if (category) {
@@ -68,10 +74,17 @@ router.get('/products', async (req, res, next) => {
             ? { name: 'asc' }
             : { createdAt: 'desc' }
 
+    /**
+     * El checkout llama a este endpoint con all=true para reconciliar el carrito
+     * con los precios reales. Sin ese parámetro se limita a 60 productos, así que
+     * un carrito con artículos que no caen en la primera página se quedaría sin
+     * actualizar tras un cambio de precio.
+     */
+    const toma = all === 'true' ? 500 : Math.min(Number(limit) || 60, 200)
     const products = await prisma.product.findMany({
       where,
       orderBy,
-      take: Math.min(Number(limit) || 60, 200),
+      take: toma,
       include: { category: { select: { id: true, name: true, slug: true } } },
     })
     res.json({ products: products.map(withImageUrl) })

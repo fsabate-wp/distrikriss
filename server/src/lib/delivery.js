@@ -1,9 +1,12 @@
 import { haversineKm, polygonFromCircle, closeRing } from './geo.js'
 import { booleanPointInPolygon, point as turfPoint } from '@turf/turf'
 import { prisma } from './prisma.js'
-import { parseLocalDate, startOfLocalDay, minutesOfDay } from './date.js'
+import { parseLocalDate, startOfLocalDay, minutesOfDay, localDateKey, addDays } from './date.js'
 
 const round = (n, dec = 2) => Math.round(n * 10 ** dec) / 10 ** dec
+
+/** Cuantos dias hacia adelante se puede agendar una entrega. */
+export const MAX_DIAS_ANTICIPACION = 30
 
 export async function getSettings() {
   const s = await prisma.settings.findUnique({ where: { id: 1 } })
@@ -89,21 +92,17 @@ export function nextDeliveryDates(zone, settings, now = new Date(), count = 7) {
   return dates
 }
 
-export async function slotAvailabilityFor(date, zone, settings) {
-  const start = startOfLocalDay(date)
-  const end = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
-  const booked = await prisma.order.groupBy({
-    by: ['slotId'],
-    where: {
-      deliveryDate: { gte: start, lte: end },
-      status: { notIn: ['CANCELLED'] },
-    },
-    _count: { _all: true },
-  })
-  const counts = Object.fromEntries(booked.map((b) => [b.slotId, b._count._all]))
+/**
+ * Disponibilidad de los horarios de una fecha concreta.
+ *
+ * Es informativa: entre esta consulta y el pedido puede entrar otra peticion.
+ * La reserva real la hace reserveSlot, que si bloquea filas.
+ */
+export async function slotAvailabilityFor(date, zone) {
+  const { counts } = await occupancyFor(date)
   return (zone?.slots ?? []).map((slot) => {
     const bookedCount = counts[slot.id] ?? 0
-    const capacity = slot.capacity ?? 0
+    const capacity = Number(slot.capacity) || 0
     return {
       id: slot.id,
       label: slot.label,
@@ -115,6 +114,155 @@ export async function slotAvailabilityFor(date, zone, settings) {
       available: bookedCount < capacity,
     }
   })
+}
+
+/**
+ * Cuantos pedidos ocupan cada horario en una fecha.
+ *
+ * La comparacion es por dia calendario exacto (medianoche local), no por rango,
+ * para que PostgreSQL pueda usar el indice.
+ */
+export async function occupancyFor(date) {
+  const dia = startOfLocalDay(date)
+  const booked = await prisma.order.groupBy({
+    by: ['slotId'],
+    where: {
+      deliveryDate: dia,
+      status: { notIn: ['CANCELLED'] },
+    },
+    _count: { _all: true },
+  })
+  return { dia, counts: Object.fromEntries(booked.map((b) => [b.slotId, b._count._all])) }
+}
+
+/** Capacidad declarada de un horario dentro de una zona. */
+export function capacityOf(zone, slotId) {
+  const slot = (zone?.slots ?? []).find((s) => s.id === slotId)
+  return Math.max(0, Number(slot?.capacity) || 0)
+}
+
+/** Aplica la disponibilidad a los horarios de una zona. */
+export function slotsWithAvailability(zone, counts = {}) {
+  return (zone?.slots ?? []).map((slot) => {
+    const booked = Number(counts[slot.id]) || 0
+    const capacity = Number(slot.capacity) || 0
+    return {
+      id: slot.id,
+      label: slot.label,
+      start: slot.start,
+      end: slot.end,
+      capacity,
+      booked,
+      remaining: Math.max(0, capacity - booked),
+      available: booked < capacity,
+    }
+  })
+}
+
+/**
+ * Ocupación de varias fechas en una sola consulta.
+ *
+ * El selector de horarios pedía un GROUP BY por día, lo que multiplicaba las
+ * consultas por los días de la semana. Aquí se resuelve de una vez.
+ */
+export async function occupancyForDates(dates) {
+  if (!dates.length) return { countsByDate: {} }
+  const dias = dates.map((d) => startOfLocalDay(d))
+  const min = new Date(Math.min(...dias))
+  const max = new Date(dias.reduce((acc, d) => (d > acc ? d : acc), dias[0]))
+  max.setHours(23, 59, 59, 999)
+
+  const rows = await prisma.order.groupBy({
+    by: ['deliveryDate', 'slotId'],
+    where: {
+      deliveryDate: { gte: min, lte: max },
+      status: { notIn: ['CANCELLED'] },
+    },
+    _count: { _all: true },
+  })
+
+  const countsByDate = {}
+  for (const d of dates) countsByDate[localDateKey(d)] = {}
+  for (const row of rows) {
+    const key = localDateKey(row.deliveryDate)
+    if (!countsByDate[key]) continue
+    countsByDate[key][row.slotId] = (countsByDate[key][row.slotId] || 0) + row._count._all
+  }
+  return { countsByDate }
+}
+
+/**
+ * Reserva un horario de forma atomica, dentro de la transaccion del pedido.
+ *
+ * La comprobacion previa de disponibilidad puede quedar obsoleta entre la
+ * peticion del cliente y el guardado: dos personas pueden ver "disponible" a la
+ * vez y ambas presentar el pedido. Aqui se bloquean las filas de los pedidos
+ * concurrentes con FOR UPDATE y se vuelve a contar, de modo que solo una gana el
+ * sitio y la otra recibe SLOT_FULL.
+ */
+export async function reserveSlot(tx, { date, zone, slotId }) {
+  const dia = startOfLocalDay(date)
+  const capacidad = capacityOf(zone, slotId)
+  if (capacidad <= 0) {
+    throw Object.assign(new Error('Ese horario no tiene plazas disponibles'), {
+      status: 409,
+      code: 'SLOT_FULL',
+    })
+  }
+
+  /**
+   * Bloqueo de la fila antes de contar.
+   *
+   * PostgreSQL no admite FOR UPDATE con agregados, así que se bloquea una fila
+   * concreta de la serie y se cuenta después, ya dentro del bloqueo. Cuando la
+   * zona aún no tiene pedidos, el bloqueo recae sobre la fila del producto
+   * virtual de la serie, que existe siempre y serializa a todos los que compiten
+   * por ese horario.
+   */
+  // La fila de bloqueo se crea si falta. El ON CONFLICT DO NOTHING de PostgreSQL
+  // serializa tambien a los que intentan crearla a la vez, asi que el caso
+  // "la fila no existe todavia" no abre una ventana de sobreventa.
+  await tx.$queryRaw`
+    INSERT INTO "SlotLock" ("slotKey", "updatedAt")
+    VALUES (${`${localDateKey(dia)}|${slotId}`}, NOW())
+    ON CONFLICT ("slotKey") DO UPDATE SET "updatedAt" = "SlotLock"."updatedAt"
+  `
+  await tx.$queryRaw`
+    SELECT "slotKey" FROM "SlotLock"
+    WHERE "slotKey" = ${`${localDateKey(dia)}|${slotId}`}
+    FOR UPDATE
+  `
+
+  const [{ booked } = { booked: 0 }] = await tx.$queryRaw`
+    SELECT COUNT(*)::int AS booked
+    FROM "Order"
+    WHERE "deliveryDate" = ${dia}
+      AND "slotId" = ${slotId}
+      AND "status" <> 'CANCELLED'
+  `
+
+  const ocupadas = Number(booked)
+  if (ocupadas >= capacidad) {
+    throw Object.assign(new Error('Ese horario acaba de ocuparse. Elige otro'), {
+      status: 409,
+      code: 'SLOT_FULL',
+    })
+  }
+  return { ocupadas, capacidad }
+}
+
+/** Crea las filas de bloqueo de los horarios de las zonas existentes. */
+export async function ensureSlotLocks() {
+  const zonas = await prisma.deliveryZone.findMany({ select: { id: true, slots: true } })
+  const claves = new Set()
+  for (const z of zonas) {
+    for (const s of z.slots || []) claves.add(`${z.id}|${s.id}`)
+  }
+  if (!claves.size) return 0
+  return prisma.slotLock.createMany({
+    data: [...claves].map((slotKey) => ({ slotKey, updatedAt: new Date() })),
+    skipDuplicates: true,
+  }).then((r) => r.count)
 }
 
 export async function deliveryCheck(lat, lng) {
@@ -143,16 +291,35 @@ export async function deliveryCheck(lat, lng) {
   }
 }
 
+/**
+ * Valida la fecha de entrega.
+ *
+ * Las comparaciones se hacen por DIA CALENDARIO, no por marca de tiempo. Antes
+ * se comparaba el instante exacto: un pedido de "hoy" hecho a la 00:30 en hora
+ * de Guayaquil y validado por un servidor en UTC se rechazaba como fecha ya
+ * pasada. El dia se compara como fecha local, que es como lo ve el cliente.
+ */
 export function validateDeliveryDay(deliveryDate, zone, settings, now = new Date()) {
   if (!isDeliveryDay(deliveryDate, zone)) {
-    return { ok: false, code: 'NOT_DELIVERY_DAY', message: 'Ese día no hay entregas programadas en tu zona' }
+    return { ok: false, code: 'NOT_DELIVERY_DAY', message: 'Ese dia no hay entregas programadas en tu zona' }
   }
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  if (deliveryDate.getTime() < today.getTime()) {
-    return { ok: false, code: 'PAST_DATE', message: 'La fecha de entrega ya pasó' }
+  const hoy = startOfLocalDay(now)
+  const elegido = startOfLocalDay(deliveryDate)
+  if (elegido.getTime() < hoy.getTime()) {
+    return { ok: false, code: 'PAST_DATE', message: 'La fecha de entrega ya paso' }
   }
-  if (deliveryDate.getTime() === today.getTime() && !canOrderToday(settings, now)) {
-    return { ok: false, code: 'CUTOFF_PASSED', message: 'Pasó la hora de corte para entregas de hoy' }
+  if (elegido.getTime() === hoy.getTime() && !canOrderToday(settings, now)) {
+    return { ok: false, code: 'CUTOFF_PASSED', message: 'Paso la hora de corte para entregas de hoy' }
+  }
+  // Sin tope, un cliente puede agendar con un ano de antelacion y el pedido se
+  // pierde en la bandeja sin que nadie lo note.
+  const limite = startOfLocalDay(addDays(now, MAX_DIAS_ANTICIPACION))
+  if (elegido.getTime() > limite.getTime()) {
+    return {
+      ok: false,
+      code: 'TOO_FAR_AHEAD',
+      message: `Solo se puede agendar con hasta ${MAX_DIAS_ANTICIPACION} dias de anticipacion`,
+    }
   }
   return { ok: true }
 }

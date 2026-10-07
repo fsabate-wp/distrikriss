@@ -83,7 +83,7 @@ function parseCSV(csvPath) {
     if (!skuRaw && !unidadRaw && nameRaw) { currentCategory = nameRaw; continue }
     if (!nameRaw || !currentCategory) continue
     let unit = unidadRaw || 'Unidad'
-    if (/^unida$/i.test(unitRaw)) unit = 'Unidad'
+    if (/^unida$/i.test(unit)) unit = 'Unidad'
     unit = unit.trim()
     let minQuantity = parseFloat(minimoRaw.replace(',', '.'))
     if (!Number.isFinite(minQuantity) || minQuantity <= 0) minQuantity = 1

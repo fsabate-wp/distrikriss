@@ -6,6 +6,8 @@ import {
   deliveryCheck,
   nextDeliveryDates,
   slotAvailabilityFor,
+  occupancyForDates,
+  slotsWithAvailability,
   parseLocalDate,
 } from '../lib/delivery.js'
 import { localDateKey } from '../lib/date.js'
@@ -35,15 +37,16 @@ router.get('/slots', async (req, res, next) => {
     const zone = (await getZoneById(req.query.zoneId)) || (await getZones()).find((z) => z.enabled) || null
     if (!zone) return res.json({ dates: [] })
     const dates = nextDeliveryDates(zone, settings)
-    const result = []
-    for (const date of dates) {
-      const slots = await slotAvailabilityFor(date, zone, settings)
-      result.push({
+    // Una sola consulta para todas las fechas, en lugar de una por día.
+    const { countsByDate } = await occupancyForDates(dates)
+    const result = dates.map((date) => {
+      const counts = countsByDate[localDateKey(date)] || {}
+      return {
         date: localDateKey(date),
         weekday: date.getDay(),
-        slots,
-      })
-    }
+        slots: slotsWithAvailability(zone, counts),
+      }
+    })
     res.json({ dates: result })
   } catch (err) {
     next(err)
@@ -53,10 +56,9 @@ router.get('/slots', async (req, res, next) => {
 router.get('/slots/:date', async (req, res, next) => {
   try {
     const date = parseLocalDate(req.params.date)
-    const settings = await getSettings()
     const zone = (await getZoneById(req.query.zoneId)) || (await getZones()).find((z) => z.enabled) || null
     if (!zone) return res.json({ date: localDateKey(date), slots: [] })
-    const slots = await slotAvailabilityFor(date, zone, settings)
+    const slots = await slotAvailabilityFor(date, zone)
     res.json({ date: localDateKey(date), slots })
   } catch (err) {
     next(err)

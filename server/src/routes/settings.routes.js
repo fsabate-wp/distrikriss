@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma.js'
 import { config } from '../config.js'
+import { decryptSecret } from '../lib/crypto.js'
 
 const router = Router()
 
@@ -25,6 +26,25 @@ const PUBLIC_FIELDS = {
   sriEnabled: true,
 }
 
+/**
+ * Datos bancarios que el cliente necesita ver para pagar por transferencia.
+ *
+ * Se descifran aqui porque el checkout los muestra, pero el resto de la
+ * configuracion publica no los expone: antes iban en claro en
+ * settings.bankTransfer y se enviaban a cualquier visitante.
+ */
+function publicBankTransfer(settings) {
+  if (settings?.bankTransferEnc) {
+    try {
+      return decryptSecret(settings.bankTransferEnc)
+    } catch {
+      return null
+    }
+  }
+  // Instalaciones anteriores a la migración: aún sin cifrar.
+  return settings?.bankTransfer && Object.keys(settings.bankTransfer).length ? settings.bankTransfer : null
+}
+
 router.get('/public', async (req, res, next) => {
   try {
     const settings = await prisma.settings.findFirst({ where: { id: 1 } })
@@ -33,6 +53,7 @@ router.get('/public', async (req, res, next) => {
     for (const [key, enabled] of Object.entries(PUBLIC_FIELDS)) {
       if (enabled) out[key] = settings[key]
     }
+    out.bankTransfer = publicBankTransfer(settings)
     res.json({ settings: out })
   } catch (err) {
     next(err)

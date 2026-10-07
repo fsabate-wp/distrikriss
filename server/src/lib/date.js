@@ -18,3 +18,17 @@ export function endOfLocalDay(date) {
 export function minutesOfDay(date) {
   return date.getHours() * 60 + date.getMinutes()
 }
+
+/** Suma días conservando la hora local. */
+export function addDays(date, days) {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
+/** Número de días de calendario entre dos fechas locales. */
+export function daysBetween(from, to) {
+  const a = startOfLocalDay(from).getTime()
+  const b = startOfLocalDay(to).getTime()
+  return Math.round((b - a) / 86_400_000)
+}

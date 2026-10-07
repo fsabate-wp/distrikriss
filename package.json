@@ -12,6 +12,14 @@
     "dev:app": "npm run dev --workspace @distrikriss/app",
     "dev:server": "npm run dev --workspace @distrikriss/server",
     "build:landing": "npm run build --workspace @distrikriss/landing",
-    "build:app": "npm run build --workspace @distrikriss/app"
+    "build:app": "npm run build --workspace @distrikriss/app",
+    "test": "node --test server/tests/*.test.js",
+    "test:e2e": "node server/tests/e2e-facturacion.mjs && node server/tests/verify-schema.mjs && node server/tests/e2e-compra.mjs",
+    "lint": "node --check server/src/index.js && node --check server/src/app.js && node --test server/tests/*.test.js"
+  },
+  "overrides": {
+    "xml-crypto": {
+      "@xmldom/xmldom": "0.8.15"
+    }
   }
 }

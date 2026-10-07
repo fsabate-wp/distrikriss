@@ -18,30 +18,69 @@ function loadCart() {
   }
 }
 
+/**
+ * Cuántas unidades hay en el carrito de un producto.
+ *
+ * El servidor suma las líneas repetidas del mismo producto antes de validar el
+ * stock. El carrito guardaba una sola línea por producto, pero una petición
+ * manipulada puede enviar varias: la cuenta se hace aquí para que el contador
+ * coincida con lo que el servidor cobrará.
+ */
+function cantidadDe(items, productId) {
+  return items
+    .filter((i) => i.productId === productId)
+    .reduce((acc, i) => acc + Number(i.quantity || 0), 0)
+}
+
 export const useCartStore = defineStore('cart', {
   state: () => ({
     items: loadCart(),
   }),
   getters: {
-    count: (s) => s.items.reduce((acc, i) => acc + i.quantity, 0),
+    count: (s) => s.items.reduce((acc, i) => acc + Number(i.quantity || 0), 0),
+    // El servidor redondea cada línea antes de sumar (server/src/lib/precios.js).
+    // Se replica aquí para que el total del checkout coincida con el que se cobra.
     subtotal: (s) =>
-      Math.round(s.items.reduce((acc, i) => acc + i.price * i.quantity, 0) * 100) / 100,
+      Math.round(s.items.reduce((acc, i) => acc + Math.round(i.price * i.quantity * 100) / 100, 0) * 100) / 100,
     itemsById: (s) => new Map(s.items.map((i) => [i.productId, i])),
+    /** Agrupa líneas del mismo producto: el servidor las suma, el cliente también. */
+    grouped: (s) => {
+      const mapa = new Map()
+      for (const item of s.items) {
+        const actual = mapa.get(item.productId)
+        if (actual) {
+          actual.quantity = Math.round((actual.quantity + Number(item.quantity)) * 100) / 100
+          actual.lineCount += 1
+        } else {
+          mapa.set(item.productId, { ...item, lineCount: 1 })
+        }
+      }
+      return [...mapa.values()]
+    },
+    quantityOf: (s) => (productId) => cantidadDe(s.items, productId),
   },
   actions: {
     persist() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
     },
     add(product, quantity = null) {
-      // bloqueo en capa store: productos con stock 0 no pueden agregarse
-      if (Number(product.stock) === 0) return false
+      const stock = Number(product.stock)
+      if (Number.isFinite(stock) && stock <= 0) return false
       const minQ = Number(product.minQuantity) || 1
       const step = Number(product.stepQuantity) || 1
       const qty = quantity != null ? Number(quantity) : minQ
+      if (!Number.isFinite(qty) || qty <= 0) return false
+
       const existing = this.items.find((i) => i.productId === product.id)
       if (existing) {
-        existing.quantity = Math.round((existing.quantity + qty) * 100) / 100
+        const nueva = Math.round((existing.quantity + qty) * 100) / 100
+        // El servidor rechaza pasar del stock disponible: avisar aquí evita
+        // llegar al checkout para que falle.
+        if (Number.isFinite(stock) && stock >= 0 && nueva > stock) return false
+        existing.quantity = nueva
       } else {
+        // Con stock acotado, no se puede añadir más de lo que queda.
+        if (Number.isFinite(stock) && stock >= 0 && qty > stock) return false
         this.items.push({
           productId: product.id,
           name: product.name,
@@ -62,15 +101,24 @@ export const useCartStore = defineStore('cart', {
       quantity = Number(quantity)
       if (!Number.isFinite(quantity)) return
       const item = this.items.find((i) => i.productId === productId)
-      if (item) {
-        const minQ = Number(item.minQuantity) || 1
-        if (quantity < minQ - 1e-9) quantity = minQ
-        if (quantity <= 0) this.remove(productId)
-        else {
-          item.quantity = Math.round(quantity * 100) / 100
-          this.persist()
-        }
+      if (!item) return
+      const minQ = Number(item.minQuantity) || 1
+      const step = Number(item.stepQuantity) || 1
+      if (quantity < minQ - 1e-9) quantity = minQ
+      if (quantity <= 0) {
+        this.remove(productId)
+        return
       }
+      // El servidor exige múltiplos del paso de venta. Ajustar aquí evita que el
+      // cliente llegue al checkout con una cantidad que el servidor rechazará.
+      if (step > 0) {
+        const pasos = Math.max(1, Math.round(quantity / step))
+        const ajustado = Math.round(pasos * step * 100) / 100
+        // Solo se ajusta si el ajuste no deja la cantidad por debajo del mínimo.
+        if (ajustado >= minQ - 1e-9) quantity = ajustado
+      }
+      item.quantity = Math.round(quantity * 100) / 100
+      this.persist()
     },
     increment(productId) {
       const item = this.items.find((i) => i.productId === productId)

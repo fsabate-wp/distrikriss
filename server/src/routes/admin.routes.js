@@ -1,23 +1,35 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
+import crypto from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
-import { sendToUser } from '../lib/push.js'
+import { requireAuth, requireAdmin, requireTrustedOrigin, requireStepUp, noStore, limits } from '../middleware/auth.js'
+import { sendToUser, sendToAdmins } from '../lib/push.js'
 import { sendWhatsApp } from '../lib/whatsapp.js'
 import { uploadImage, uploadBrand, uploadCertificate } from '../middleware/upload.js'
 import multer from 'multer'
-import path from 'node:path'
-import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { config } from '../config.js'
+import { config, requestIp } from '../config.js'
 import { startOfLocalDay } from '../lib/date.js'
-import { issueInvoice, canIssueInvoice, loadCertificate } from '../lib/sri/index.js'
+import {
+  issueInvoice,
+  issueCreditNote,
+  submitInvoice,
+  canIssueInvoice,
+  invoicingHealthReport,
+} from '../lib/sri/index.js'
+import { inspectCertificate, clearCertificateCache, CERT_FILENAME_RE } from '../lib/sri/cert.js'
 import { sriEndpoints } from '../lib/sri/client.js'
+import { isValidIvaRate, IVA_CODES } from '../lib/sri/xml.js'
+import { renderRide } from '../lib/sri/ride.js'
+import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
+import { encryptSecret, decryptSecret, fingerprint, encryptionAvailable } from '../lib/crypto.js'
+import { recordAudit, redactSettings } from '../lib/audit.js'
 import { booleanIntersects, feature } from '@turf/turf'
 import { closeRing } from '../lib/geo.js'
 
 const router = Router()
-router.use(requireAuth, requireAdmin)
+// Todo el panel administrativo: origen confiable, sin caché y administrador vivo.
+router.use(requireAuth, requireAdmin, requireTrustedOrigin, noStore)
 
 const slugify = (str) =>
   str
@@ -183,11 +195,23 @@ router.patch('/orders/:id/status', async (req, res, next) => {
     const { status, note, paymentStatus } = statusSchema.parse(req.body)
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      include: { items: true },
+      include: { items: true, invoice: true },
     })
-    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+      if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
     if (['DELIVERED', 'CANCELLED'].includes(order.status) && order.status !== status) {
       return res.status(400).json({ error: 'Un pedido finalizado no puede cambiar de estado' })
+    }
+
+    // Un comprobante ya autorizado no puede deshacerse: la única vía legal es
+    // una nota de crédito, que requiere una decisión explícita del administrador.
+    if (status === 'CANCELLED' && order.invoice?.status === 'AUTHORIZED') {
+      return res.status(400).json({
+        error:
+          `El pedido tiene la factura ${order.invoice.number} ya autorizada por el SRI. ` +
+          'Anula el comprobante con una nota de crédito antes de cancelar el pedido.',
+        code: 'INVOICE_AUTHORIZED',
+        invoiceId: order.invoice.id,
+      })
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -217,6 +241,26 @@ router.patch('/orders/:id/status', async (req, res, next) => {
       return next
     })
     res.json({ order: withTotals(updated) })
+
+    // La factura se emite cuando la operación se vuelve exigible: al confirmar
+    // el pago por transferencia, o al entregar el pedido contra reembolso.
+    // Antes se emitía al crear el pedido, documentando una venta todavía no cobrada.
+    const pagoConfirmado =
+      (paymentStatus === 'PAID') || (status === 'DELIVERED' && order.paymentMethod === 'COD')
+    if (pagoConfirmado && updated.billingType === 'FACTURA' && !updated.invoice) {
+      try {
+        await issueInvoice(updated.id, { actor: req.user })
+      } catch (err) {
+        // El pedido ya está confirmado: la facturación no debe tumbar la operación.
+        console.error(`[sri] no se pudo emitir la factura de ${updated.code}:`, err?.message || err)
+        await sendToAdmins({
+          title: `Factura pendiente ${updated.code}`,
+          body: String(err?.message || err).slice(0, 200),
+          url: `/admin/pedidos/${updated.id}`,
+          tag: `sri-pending-${updated.id}`,
+        })
+      }
+    }
 
     const statusMessages = {
       CONFIRMED: 'Tu pedido fue confirmado',
@@ -346,7 +390,13 @@ const productSchema = z.object({
   active: z.boolean().optional(),
   featured: z.boolean().optional(),
   discount: z.number().int().min(0).max(100).optional(),
-  ivaRate: z.number().int().min(0).max(100).nullable().optional(),
+  // Antes aceptaba cualquier entero de 0 a 100 y el XML caía en silencio a 15%
+  // con un <tarifa> que el SRI rechazaba. Ahora solo se admiten las tarifas
+  // que existen en el catálogo del SRI.
+  ivaRate: z.number().int().refine(isValidIvaRate, {
+    message: `IVA no válido. Usa una de: ${Object.keys(IVA_CODES).join(', ')}.`,
+  }).nullable().optional(),
+  sriCode: z.string().max(25).optional().or(z.literal('')).nullable(),
   categoryId: z.string().optional().nullable(),
 })
 
@@ -379,6 +429,7 @@ router.post('/products', async (req, res, next) => {
         featured: data.featured ?? false,
         discount: data.discount ?? 0,
         ivaRate: data.ivaRate ?? null,
+        sriCode: data.sriCode || null,
         categoryId: data.categoryId || null,
       },
       include: { category: { select: { id: true, name: true } } },
@@ -416,6 +467,7 @@ router.put('/products/:id', async (req, res, next) => {
         ...(data.featured !== undefined && { featured: data.featured }),
         ...(data.discount !== undefined && { discount: data.discount }),
         ...(data.ivaRate !== undefined && { ivaRate: data.ivaRate }),
+        ...(data.sriCode !== undefined && { sriCode: data.sriCode || null }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId || null }),
       },
       include: { category: { select: { id: true, name: true } } },
@@ -690,16 +742,50 @@ router.delete('/categories/:id', async (req, res, next) => {
 
 /* ---------------- Settings ---------------- */
 
+/**
+ * Vista pública de la configuración para el panel.
+ *
+ * La contraseña del certificado NUNCA se devuelve: antes viajaba en claro en
+ * cada GET /settings y quedaba en el historial del navegador, en la consola y en
+ * cualquier captura. Aquí solo se informa si hay una configurada.
+ */
+function toAdminSettings(settings) {
+  if (!settings) return null
+  const {
+    sriCertificatePasswordEnc,
+    sriCertificatePasswordFor,
+    bankTransferEnc,
+    ...rest
+  } = settings
+  // Los datos bancarios vuelven descifrados para que el panel pueda editarlos.
+  let bankTransfer = settings.bankTransfer
+  if (bankTransferEnc) {
+    try {
+      bankTransfer = JSON.parse(decryptSecret(bankTransferEnc))
+    } catch {
+      bankTransfer = null
+    }
+  }
+  return {
+    ...rest,
+    sriCertificatePasswordEnc: undefined,
+    sriCertificatePasswordFor: undefined,
+    bankTransferEnc: undefined,
+    sriCertificatePassword: undefined,
+    sriCertificatePasswordSet: Boolean(sriCertificatePasswordEnc),
+    bankTransfer: bankTransfer || {},
+    sriCertificatePasswordFor: sriCertificatePasswordFor || '',
+    deliveryFeeBase: toNumber(settings.deliveryFeeBase),
+    deliveryFeePerKm: toNumber(settings.deliveryFeePerKm),
+    minOrderAmount: toNumber(settings.minOrderAmount),
+    sriIvaRate: toNumber(settings.sriIvaRate),
+  }
+}
+
 router.get('/settings', async (req, res, next) => {
   try {
     const settings = await prisma.settings.findUnique({ where: { id: 1 } })
-    if (settings) {
-      settings.deliveryFeeBase = toNumber(settings.deliveryFeeBase)
-      settings.deliveryFeePerKm = toNumber(settings.deliveryFeePerKm)
-      settings.minOrderAmount = toNumber(settings.minOrderAmount)
-      settings.sriIvaRate = toNumber(settings.sriIvaRate)
-    }
-    res.json({ settings })
+    res.json({ settings: toAdminSettings(settings) })
   } catch (err) {
     next(err)
   }
@@ -743,29 +829,160 @@ const settingsSchema = z.object({
   sriEnvironment: z.union([z.literal(1), z.literal(2)]),
   sriEstablishment: z.string().regex(/^\d{3}$/),
   sriEmissionPoint: z.string().regex(/^\d{3}$/),
-  sriCertificateFile: z.string().max(200),
-  sriCertificatePassword: z.string().max(200),
+  // Antes era texto libre y terminaba en path.join(CERT_DIR, valor), lo que
+  // permitía leer cualquier archivo del servidor. Solo se acepta el nombre que
+  // genera la subida del certificado.
+  sriCertificateFile: z
+    .string()
+    .max(200)
+    .refine((v) => v === '' || CERT_FILENAME_RE.test(v), {
+      message: 'Nombre de certificado inválido. Vuelve a subir el archivo .p12.',
+    }),
+  // Solo se acepta para escribir; el valor se cifra antes de tocar la base.
+  sriCertificatePassword: z.string().max(200).optional(),
   sriObligadoContabilidad: z.boolean(),
   sriSpecialContributor: z.string().max(40),
   sriAddress: z.string().max(200),
   sriAccountingResolution: z.string().max(40),
-  sriIvaRate: z.number().min(0).max(100),
+  sriIvaRate: z.number().refine(isValidIvaRate, {
+    message: `IVA no válido. Usa una de: ${Object.keys(IVA_CODES).join(', ')}.`,
+  }),
+  sriDeliveryTaxable: z.boolean(),
 })
+
+/** Campos cuya modificación exige volver a confirmar la contraseña. */
+const SENSITIVE_SETTINGS = new Set([
+  'ruc',
+  'sriEnvironment',
+  'sriEstablishment',
+  'sriEmissionPoint',
+  'sriCertificateFile',
+  'sriCertificatePassword',
+  'businessName',
+  'sriEnabled',
+])
 
 router.put('/settings', async (req, res, next) => {
   try {
     const data = settingsSchema.partial().parse(req.body)
-    let settings = await prisma.settings.findUnique({ where: { id: 1 } })
-    if (settings) {
-      settings = await prisma.settings.update({ where: { id: 1 }, data })
-    } else {
-      settings = await prisma.settings.create({ data: { id: 1, storeLat: 0, storeLng: 0, ...data } })
+    const current = await prisma.settings.findUnique({ where: { id: 1 } })
+
+    const tocados = Object.keys(data).filter((k) => SENSITIVE_SETTINGS.has(k) && data[k] !== undefined)
+    if (tocados.length) {
+      // Cambiar el RUC, el ambiente o el certificado exige confirmación reciente
+      // de contraseña: con un token robado basta para desviar toda la
+      // facturación del negocio.
+      const verifiedAt = Number(req.get('x-sri-verified-at'))
+      const nonce = req.get('x-sri-step-up')
+      const ventanaMs = 10 * 60 * 1000
+      if (!nonce || !verifiedAt || Date.now() - verifiedAt > ventanaMs) {
+        return res.status(428).json({
+          error: 'Para cambiar los datos fiscales debes volver a confirmar tu contraseña.',
+          code: 'STEP_UP_REQUIRED',
+          fields: tocados,
+        })
+      }
+      const fallo = validateSensitiveChange(current, data, tocados)
+      if (fallo) return res.status(400).json(fallo)
     }
-    res.json({ settings: { ...settings, deliveryFeeBase: toNumber(settings.deliveryFeeBase), deliveryFeePerKm: toNumber(settings.deliveryFeePerKm), minOrderAmount: toNumber(settings.minOrderAmount), sriIvaRate: toNumber(settings.sriIvaRate) } })
+
+    const payload = { ...data }
+    const plainPassword = payload.sriCertificatePassword
+    delete payload.sriCertificatePassword
+
+    // Los datos bancarios se cifran igual que la contraseña del certificado: en
+    // claro, cualquiera que abriera el sitio veía la cuenta en la que se iba a
+    // transferir dinero.
+    if (payload.bankTransfer !== undefined) {
+      const banco = payload.bankTransfer
+      const vacio = !banco || Object.values(banco).every((v) => !String(v ?? '').trim())
+      // bankTransferEnc es la nueva fuente de verdad. La columna en claro se deja
+      // vacía para que no quede una copia legible en la base.
+      payload.bankTransferEnc = vacio ? '' : encryptSecret(JSON.stringify(banco))
+      payload.bankTransfer = {}
+    }
+
+    if (plainPassword !== undefined) {
+      if (plainPassword === '') {
+        // Vaciar significa borrar la contraseña configurada.
+        payload.sriCertificatePasswordEnc = ''
+        payload.sriCertificatePasswordFor = ''
+      } else {
+        // Se cifra en el servidor con SRI_CERT_SECRET. El texto plano nunca se
+        // guarda ni se devuelve.
+        payload.sriCertificatePasswordEnc = encryptSecret(plainPassword)
+        payload.sriCertificatePasswordFor = current?.sriCertificateFile || ''
+      }
+    }
+
+    let settings
+    if (current) {
+      if (payload.sriCertificateFile && payload.sriCertificateFile !== current.sriCertificateFile) {
+        // Si se cambia el archivo y no se envía una contraseña nueva, la que había
+        // cifrada dejaría de corresponder: se descarta para que se vuelva a pedir.
+        const seEnvioPassword = plainPassword !== undefined && plainPassword !== ''
+        if (!seEnvioPassword) {
+          payload.sriCertificatePasswordEnc = ''
+          payload.sriCertificatePasswordFor = ''
+        } else {
+          payload.sriCertificatePasswordFor = payload.sriCertificateFile
+        }
+        clearCertificateCache()
+      }
+      // bankTransfer ya no viaja en claro: viaja en bankTransferEnc, que Prisma
+      // acepta directamente porque es una columna normal.
+      settings = await prisma.settings.update({ where: { id: 1 }, data: payload })
+    } else {
+      settings = await prisma.settings.create({ data: { id: 1, storeLat: 0, storeLng: 0, ...payload } })
+    }
+
+    if (tocados.length) {
+      await recordAudit({
+        req,
+        action: 'SRI_SETTINGS_CHANGED',
+        target: tocados.join(','),
+        before: redactSettings(pick(current, tocados)),
+        after: redactSettings(pick(data, tocados)),
+      })
+      // Los cambios fiscales pueden dejar comprobantes a medias por un ambiente
+      // distinto: se avisa para que se reintenten a mano si hace falta.
+      await sendToAdmins({
+        title: 'Configuración fiscal modificada',
+        body: `Se cambió: ${tocados.join(', ')}. Revisa las facturas sin resolver.`,
+        url: '/admin/facturas',
+        tag: 'sri-settings',
+      })
+    }
+
+    res.json({ settings: toAdminSettings(settings) })
   } catch (err) {
     next(err)
   }
 })
+
+/** Reglas de coherencia fiscal que se comprueban antes de guardar. */
+function validateSensitiveChange(current, data, tocados) {
+  const merged = { ...current, ...data }
+  if (merged.sriEnabled) {
+    if (!merged.ruc) return { error: 'Configura el RUC antes de activar la facturación electrónica' }
+    if (!merged.businessName?.trim()) return { error: 'Configura la razón social antes de activar la facturación' }
+    if (!merged.sriCertificateFile) return { error: 'Sube el certificado .p12 antes de activar la facturación' }
+    const habiaPassword = data.sriCertificatePassword
+      ? data.sriCertificatePassword !== ''
+      : Boolean(current?.sriCertificatePasswordEnc)
+    if (!habiaPassword) return { error: 'Configura la contraseña del certificado antes de activar la facturación' }
+  }
+  if (tocados.includes('sriEnvironment') && data.sriEnvironment === 1 && !merged.sriCertificateFile) {
+    return { error: 'No se puede pasar a producción sin un certificado configurado' }
+  }
+  return null
+}
+
+function pick(object, keys) {
+  if (!object) return null
+  return Object.fromEntries(keys.filter((k) => object[k] !== undefined).map((k) => [k, object[k]]))
+}
+
 
 /* ---------------- Zonas de entrega ---------------- */
 
@@ -880,27 +1097,80 @@ router.delete('/zones/:id', async (req, res, next) => {
 
 /* ---------------- Facturación electrónica (SRI) ---------------- */
 
-router.post('/uploads/certificate', uploadCertificate.single('certificate'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No se recibió ningún certificado' })
-  res.json({ filename: req.file.filename })
+const toNumberOrNull = (v) => (v === null || v === undefined ? null : Number(v))
+
+/** Confirma la contraseña del administrador y abre una ventana para actuar. */
+router.post('/sri/step-up', limits.stepUp, async (req, res, next) => {
+  try {
+    const { password } = z.object({ password: z.string().min(1).max(200) }).parse(req.body)
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    const ok = user ? await bcrypt.compare(password, user.passwordHash) : false
+    if (!ok) return res.status(401).json({ error: 'Contraseña incorrecta' })
+    await recordAudit({ req, action: 'SRI_STEP_UP', target: req.user.id })
+    // El nonce liga la confirmación a esta sesión de forma opaca para el cliente.
+    const nonce = crypto.randomBytes(16).toString('hex')
+    res.setHeader('X-SRI-Verified-At', String(Date.now()))
+    res.setHeader('X-SRI-Step-Up', nonce)
+    res.json({ ok: true, verifiedAt: Date.now(), nonce })
+  } catch (err) {
+    next(err)
+  }
 })
+
+router.post(
+  '/uploads/certificate',
+  limits.certificateUpload,
+  uploadCertificate.single('certificate'),
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No se recibió ningún certificado' })
+      const bytes = req.file.buffer || (await import('node:fs')).readFileSync(req.file.path)
+      // Firma PKCS#12: 0x30 0x82. El filtro por extension solo no basta.
+      if (bytes[0] !== 0x30 || bytes[1] !== 0x82) {
+        return res.status(400).json({ error: 'El archivo no es un certificado .p12 válido' })
+      }
+      await recordAudit({
+        req,
+        action: 'SRI_CERTIFICATE_UPLOADED',
+        target: req.file.filename,
+        after: { fingerprint: fingerprint(bytes), bytes: bytes.length },
+      })
+      res.json({ filename: req.file.filename, fingerprint: fingerprint(bytes) })
+    } catch (err) {
+      next(err)
+    }
+  },
+)
 
 router.get('/invoices', async (req, res, next) => {
   try {
-    const invoices = await prisma.invoice.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        order: {
-          select: { code: true, total: true, status: true, createdAt: true, billingType: true },
+    const { status, take = 100, offset = 0 } = req.query
+    const where = {}
+    if (status) where.status = status
+    const [invoices, total] = await Promise.all([
+      prisma.invoice.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(Number(take) || 100, 200),
+        skip: Number(offset) || 0,
+        include: {
+          order: { select: { code: true, total: true, status: true, createdAt: true, billingType: true } },
         },
-      },
-    })
+      }),
+      prisma.invoice.count({ where }),
+    ])
     res.json({
       invoices: invoices.map((i) => ({
         ...i,
-        order: i.order ? { ...i.order, total: toNumber(i.order.total) } : null,
+        // El XML firmado no viaja en el listado: pesa y contiene datos del
+        // cliente. Se descarga aparte, y el panel ya tiene su propio endpoint.
+        xml: undefined,
+        receptionResponse: undefined,
+        authorizationXml: undefined,
+        totalFiscal: toNumberOrNull(i.totalFiscal),
+        order: i.order ? { ...i.order, total: toNumberOrNull(i.order.total) } : null,
       })),
+      total,
     })
   } catch (err) {
     next(err)
@@ -912,17 +1182,76 @@ router.get('/invoices/:id', async (req, res, next) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: {
+        events: { orderBy: { createdAt: 'desc' } },
+        credits: { select: { id: true, number: true, accessKey: true, status: true } },
         order: { include: { items: true, user: { select: { name: true, phone: true, email: true } } } },
       },
     })
     if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
-    res.json({ invoice })
+    res.json({
+      invoice: {
+        ...invoice,
+        xml: undefined,
+        receptionResponse: undefined,
+        authorizationXml: undefined,
+        totalFiscal: toNumberOrNull(invoice.totalFiscal),
+        order: invoice.order ? withTotals(invoice.order) : null,
+      },
+    })
   } catch (err) {
     next(err)
   }
 })
 
-router.post('/invoices/:id/retry', async (req, res, next) => {
+/** XML firmado del comprobante, para el expediente fiscal. */
+router.get('/invoices/:id/xml', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } })
+    if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    if (!invoice.xml) return res.status(404).json({ error: 'El comprobante todavía no tiene XML' })
+    await recordAudit({ req, action: 'SRI_XML_DOWNLOADED', target: invoice.id })
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${invoice.number}.xml"`)
+    res.send(invoice.xml)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** RIDE en PDF: la representación que el cliente necesita para deducir. */
+router.get('/invoices/:id/ride', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: { order: { include: { items: true } } },
+    })
+    if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!settings) return res.status(500).json({ error: 'Configuración no encontrada' })
+
+    const { lines, totalDiscount } = buildLines(invoice.order, settings)
+    const groups = buildTaxGroups(lines)
+    const totals = computeTotals(lines, totalDiscount)
+    const pdf = await renderRide({ invoice, order: invoice.order, settings, lines, groups, totals })
+    await recordAudit({ req, action: 'SRI_RIDE_DOWNLOADED', target: invoice.id })
+
+    const etiqueta = invoice.docType === 'NOTA_CREDITO' ? 'nota-credito' : 'factura'
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${etiqueta}-${invoice.number}.pdf"`)
+    res.send(pdf)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Reintenta el envío de un comprobante.
+ *
+ * No emite nada nuevo: firma lo que ya existe y consulta primero al SRI. Un
+ * reintento sobre un comprobante ya autorizado no hacía nada útil y podía
+ * dejar dos documentos con la misma clave.
+ */
+router.post('/invoices/:id/retry', limits.invoiceRetry, async (req, res, next) => {
   try {
     const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } })
     if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
@@ -930,10 +1259,29 @@ router.post('/invoices/:id/retry', async (req, res, next) => {
     if (!canIssueInvoice(settings)) {
       return res.status(400).json({ error: 'La facturación SRI no está configurada (actívala y sube el certificado)' })
     }
-    await issueInvoice(invoice.orderId, { force: true })
+    if (invoice.status === 'AUTHORIZED') {
+      return res.status(400).json({ error: 'Este comprobante ya fue autorizado por el SRI' })
+    }
+    if (invoice.status === 'CREDITED') {
+      return res.status(400).json({ error: 'Este comprobante fue anulado por una nota de crédito' })
+    }
+    if (invoice.status === 'NOT_AUTHORIZED') {
+      return res.status(400).json({
+        error:
+          'El SRI rechazó este comprobante y tiene registrado su clave. Corrije la causa y emite uno nuevo: ' +
+          'no se puede reenviar la misma clave de acceso.',
+        code: invoice.responseCode || undefined,
+      })
+    }
+
+    await recordAudit({ req, action: 'SRI_INVOICE_RETRY', target: invoice.number, after: { status: invoice.status } })
+    await submitInvoice(invoice.id, { actor: req.user, force: true })
     const updated = await prisma.invoice.findUnique({
-      where: { id: req.params.id },
-      include: { order: { select: { code: true } } },
+      where: { id: invoice.id },
+      select: {
+        id: true, number: true, accessKey: true, status: true, responseCode: true, responseMessage: true,
+        authorizationNumber: true, authorizationDate: true, retryCount: true, nextRetryAt: true,
+      },
     })
     res.json({ invoice: updated })
   } catch (err) {
@@ -941,7 +1289,128 @@ router.post('/invoices/:id/retry', async (req, res, next) => {
   }
 })
 
-router.post('/sri/test', async (req, res, next) => {
+/** Emite la factura de un pedido cuyo pago acaba de confirmarse. */
+router.post('/orders/:id/invoice', limits.invoiceWrite, async (req, res, next) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { items: true, invoice: true },
+    })
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+    if (order.billingType !== 'FACTURA') {
+      return res.status(400).json({ error: 'Este pedido se creó como consumo final' })
+    }
+    if (order.invoice) {
+      return res.json({ invoice: { id: order.invoice.id, status: order.invoice.status, number: order.invoice.number } })
+    }
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!canIssueInvoice(settings)) {
+      return res.status(400).json({ error: 'La facturación SRI no está configurada' })
+    }
+    await recordAudit({ req, action: 'SRI_INVOICE_MANUAL', target: order.code })
+    const invoice = await issueInvoice(order.id, { actor: req.user })
+    res.json({
+      invoice: invoice && {
+        id: invoice.id, number: invoice.number, status: invoice.status,
+        accessKey: invoice.accessKey, responseMessage: invoice.responseMessage,
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Anula un comprobante autorizado con una nota de crédito.
+ * Exige confirmación de contraseña: es la operación más delicada del panel.
+ */
+router.post('/invoices/:id/credit-note', limits.invoiceWrite, requireStepUp, async (req, res, next) => {
+  try {
+    const { reason } = z.object({ reason: z.string().min(5).max(300) }).parse(req.body)
+    const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } })
+    if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    await recordAudit({
+      req,
+      action: 'SRI_CREDIT_NOTE',
+      target: invoice.number,
+      before: { status: invoice.status, total: toNumberOrNull(invoice.totalFiscal) },
+      after: { reason },
+    })
+    const note = await issueCreditNote(invoice.id, { reason, actor: req.user })
+    res.json({
+      invoice: note && {
+        id: note.id, number: note.number, status: note.status,
+        accessKey: note.accessKey, responseMessage: note.responseMessage,
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** Panorama de salud fiscal del negocio. */
+router.get('/sri/health', async (req, res, next) => {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    const report = await invoicingHealthReport()
+    const certificate = settings ? inspectCertificate(settings) : { ok: false, error: 'Sin configuración' }
+
+    // El certificado se revisa aunque falte la clave de cifrado: así el panel
+    // dice "define SRI_CERT_SECRET" en vez de un error genérico.
+    const cifradoDisponible = encryptionAvailable()
+    const advertencias = []
+    if (settings?.sriEnabled && !cifradoDisponible) {
+      advertencias.push(
+        'Falta SRI_CERT_SECRET en el servidor. Sin ella no se puede cifrar la contraseña del certificado. ' +
+          'Genera una con "openssl rand -hex 32" y reinicia la API. El resto de la tienda funciona con normalidad.',
+      )
+    }
+    if (settings?.sriEnabled && !settings.sriCertificateFile) {
+      advertencias.push('No has subido el certificado .p12: las facturas no se pueden firmar.')
+    }
+    if (certificate.ok && !certificate.rucMatches) {
+      advertencias.push(
+        `El RUC del certificado (${certificate.rucInCertificate}) no coincide con el configurado (${settings.ruc}).`,
+      )
+    }
+    if (certificate.ok && certificate.expiringSoon) {
+      advertencias.push(`El certificado vence en ${certificate.daysLeft} días.`)
+    }
+
+    res.json({
+      ...report,
+      certificate,
+      configured: canIssueInvoice(settings),
+      encryptionAvailable: cifradoDisponible,
+      advertencias,
+      environment: Number(settings?.sriEnvironment) === 1 ? 'PRODUCCION' : 'PRUEBAS',
+      series: await prisma.documentSeries.findMany({ orderBy: { docType: 'asc' } }),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** Bitácora de acciones sensibles sobre la configuración fiscal. */
+router.get('/sri/audit', async (req, res, next) => {
+  try {
+    const take = Math.min(Number(req.query.take) || 50, 200)
+    const [logs, events] = await Promise.all([
+      prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take }),
+      prisma.invoiceEvent.findMany({
+        orderBy: { createdAt: 'desc' },
+        take,
+        include: { invoice: { select: { number: true, status: true } } },
+      }),
+    ])
+    res.json({ logs, events })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** Diagnóstico del certificado y de la conectividad con el SRI. */
+router.post('/sri/test', limits.sriTest, async (req, res, next) => {
   try {
     const settings = await prisma.settings.findUnique({ where: { id: 1 } })
     if (!settings || !settings.sriEnabled) {
@@ -950,19 +1419,22 @@ router.post('/sri/test', async (req, res, next) => {
 
     const missing = []
     if (!settings.ruc) missing.push('RUC')
+    if (!/^\d{13}$/.test(settings.ruc || '')) missing.push('RUC válido (13 dígitos)')
     if (!settings.businessName) missing.push('razón social')
+    if (!settings.sriAddress && !settings.storeAddress) missing.push('dirección del establecimiento')
     if (!settings.sriCertificateFile) missing.push('certificado .p12')
-    if (!settings.sriCertificatePassword) missing.push('contraseña del certificado')
+    if (!settings.sriCertificatePasswordEnc) missing.push('contraseña del certificado')
+    if (!isValidIvaRate(Number(settings.sriIvaRate))) {
+      missing.push(`IVA ${settings.sriIvaRate}% (válidos: ${Object.keys(IVA_CODES).join(', ')})`)
+    }
     if (missing.length) {
       return res.status(400).json({ error: `Falta configurar: ${missing.join(', ')}` })
     }
 
-    let certificate = { ok: true }
-    try {
-      loadCertificate(settings)
-    } catch (err) {
-      certificate = { ok: false, error: String(err?.message || err).slice(0, 300) }
-    }
+    // El certificado se inspecciona con la contraseña cifrada: el panel nunca ve
+    // el texto plano y el chequeo real (vigencia y RUC) ocurre igual.
+    clearCertificateCache()
+    const certificate = inspectCertificate(settings)
 
     const environment = Number(settings.sriEnvironment)
     const target = sriEndpoints(environment)
@@ -972,22 +1444,31 @@ router.post('/sri/test', async (req, res, next) => {
       { name: 'Autorización', url: target.authorization },
     ]) {
       const start = Date.now()
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 10_000)
       try {
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 10000)
         const response = await fetch(item.url, { method: 'GET', signal: controller.signal })
-        clearTimeout(timer)
-        checks.push({ name: item.name, url: item.url, reachable: true, httpStatus: response.status, ms: Date.now() - start })
+        checks.push({
+          name: item.name,
+          url: item.url,
+          reachable: true,
+          httpStatus: response.status,
+          ms: Date.now() - start,
+        })
       } catch (err) {
-        const isTimeout = err?.name === 'AbortError'
         checks.push({
           name: item.name,
           url: item.url,
           reachable: false,
           httpStatus: null,
           ms: Date.now() - start,
-          error: isTimeout ? 'timeout de 10s' : String(err?.cause?.code || err?.message || err).slice(0, 200),
+          error:
+            err?.name === 'AbortError'
+              ? 'timeout de 10s'
+              : String(err?.cause?.code || err?.message || err).slice(0, 200),
         })
+      } finally {
+        clearTimeout(timer)
       }
     }
 
@@ -996,12 +1477,13 @@ router.post('/sri/test', async (req, res, next) => {
       environmentLabel: environment === 1 ? 'Producción' : 'Pruebas',
       certificate,
       checks,
-      ok: certificate.ok && checks.every((c) => c.reachable && c.httpStatus === 200),
+      ok: certificate.ok && certificate.rucMatches && checks.every((c) => c.reachable && c.httpStatus === 200),
     })
   } catch (err) {
     next(err)
   }
 })
+
 
 /* ---------------- Uploads ---------------- */
 

@@ -180,7 +180,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money } from '../utils/format.js'
+import { money, discountedPrice } from '../utils/format.js'
 import MapPicker from '../components/MapPicker.vue'
 import DeliverySlotPicker from '../components/DeliverySlotPicker.vue'
 
@@ -220,14 +220,30 @@ const billingValid = computed(() => {
 const canSubmit = computed(() => {
   if (cart.items.length === 0) return false
   if (!activeAddressValid.value) return false
+  // El mínimo se comprueba aquí para no gastar un envío en un rechazo evitable,
+  // pero el servidor lo vuelve a validar: es la regla que manda.
+  if (belowMinOrder.value) return false
   if (!delivery.value) return false
   if (wantsInvoice.value && !billingValid.value) return false
   return true
 })
 
+/** Cuánto falta para alcanzar el pedido mínimo de la zona, en productos. */
+const faltaParaMinimo = computed(() => {
+  const min = Number(deliveryCheck.value?.minOrderAmount || 0)
+  if (min <= 0) return 0
+  return Math.max(0, Math.round((min - cart.subtotal) * 100) / 100)
+})
+
+const belowMinOrder = computed(() => faltaParaMinimo.value > 0.01)
+
 const submitHint = computed(() => {
   if (cart.items.length === 0) return 'Tu carrito está vacío'
   if (!activeAddressValid.value) return 'Selecciona una dirección dentro de una zona de entrega'
+  if (belowMinOrder.value) {
+    return `El pedido mínimo en tu zona es ${money(deliveryCheck.minOrderAmount)} en productos. ` +
+      `Te faltan ${money(faltaParaMinimo)}. El envío no cuenta para el mínimo.`
+  }
   if (!delivery.value) return 'Elige fecha y horario de entrega'
   if (wantsInvoice.value && !billingValid.value) return 'Completa los datos de facturación'
   return ''
@@ -350,7 +366,11 @@ async function submit() {
     body.slotId = delivery.value.slotId
     body.paymentMethod = payment.value
     body.notes = notes.value || ''
-    body.items = cart.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+    // Se envían las líneas tal cual, incluso si un producto apareciera
+    // repetido: el servidor las suma para validar el stock. Si el cliente tiene
+    // el mismo producto en varias líneas, aquí se agregan para que el pedido
+    // refleje exactamente lo que ve en el resumen.
+    body.items = cart.grouped.map((i) => ({ productId: i.productId, quantity: i.quantity }))
     if (settings.settings?.sriEnabled && billing.value.type === 'FACTURA') {
       body.billing = {
         type: 'FACTURA',
@@ -372,9 +392,90 @@ async function submit() {
   }
 }
 
+/**
+ * Reconcilia el carrito con el catálogo actual.
+ *
+ * El carrito guarda el precio con el que se añadió el producto. Si el negocio
+ * cambia el precio o el descuento, el carrito seguía mostrando la cifra vieja
+ * mientras el servidor cobra la nueva: el cliente veía un total y recibía otro.
+ * Al abrir el checkout se vuelve a leer el catálogo y se avisa de las diferencias.
+ */
+async function reconcileCart() {
+  if (!cart.items.length) return { cambios: [] }
+  try {
+    const data = await api.get('/api/catalog/products')
+    const catalogo = new Map(data.products.map((p) => [p.id, p]))
+    const cambios = []
+
+    for (const item of cart.items) {
+      const p = catalogo.get(item.productId)
+      if (!p) {
+        cambios.push({ type: 'removed', item })
+        cart.remove(item.productId)
+        continue
+      }
+      if (!p.active) {
+        cambios.push({ type: 'inactive', item })
+        cart.remove(item.productId)
+        continue
+      }
+      const precioActual = discountedPrice(p.price, p.discount)
+      const stock = Number(p.stock)
+      let cantidad = Number(item.quantity)
+
+      if (Number.isFinite(stock) && stock >= 0 && cantidad > stock) {
+        cambios.push({ type: 'stock', item, stock })
+        cantidad = stock
+      }
+      const minQ = Number(p.minQuantity) || 1
+      if (cantidad < minQ) {
+        cambios.push({ type: 'min', item, minQ })
+        cantidad = minQ
+      }
+      if (Math.abs(cantidad - Number(item.quantity)) > 1e-9) {
+        item.quantity = Math.round(cantidad * 100) / 100
+      }
+      if (Math.abs(precioActual - Number(item.price)) > 1e-9) {
+        cambios.push({ type: 'price', item, antes: item.price, ahora: precioActual })
+        item.price = precioActual
+      }
+      item.minQuantity = minQ
+      item.stepQuantity = Number(p.stepQuantity) || 1
+      item.name = p.name
+      item.presentation = p.presentation || null
+      item.imageUrl = p.imageUrl || null
+      item.stock = p.stock
+    }
+    cart.persist()
+    return cambios
+  } catch {
+    // Sin catálogo no se puede reconciliar: se deja el carrito como está y el
+    // servidor volverá a validar cada cosa al confirmar el pedido.
+    return []
+  }
+}
+
 onMounted(async () => {
   await settings.load()
   await loadAddresses()
+  const cambios = await reconcileCart()
+  if (cambios.length) {
+    const precios = cambios.filter((c) => c.type === 'price')
+    const quitados = cambios.filter((c) => c.type === 'removed' || c.type === 'inactive')
+    const ajustes = cambios.filter((c) => c.type === 'stock' || c.type === 'min')
+    const partes = []
+    if (precios.length) {
+      partes.push(
+        `el precio de ${precios.length} producto(s) cambió` +
+          (precios.length === 1
+            ? `: ${precios[0].item.name} pasa de ${money(precios[0].antes)} a ${money(precios[0].ahora)}`
+            : ''),
+      )
+    }
+    if (quitados.length) partes.push(`${quitados.length} producto(s) ya no están disponibles`)
+    if (ajustes.length) partes.push(`se ajustaron las cantidades de ${ajustes.length} producto(s)`)
+    error.value = `Actualizamos tu carrito: ${partes.join('; ')}.`
+  }
   loading.value = false
 })
 </script>
