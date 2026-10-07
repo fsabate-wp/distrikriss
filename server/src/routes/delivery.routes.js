@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { rateLimit } from '../middleware/auth.js'
 import {
   getSettings,
   getZones,
@@ -65,15 +67,40 @@ router.get('/slots/:date', async (req, res, next) => {
   }
 })
 
-router.get('/check', async (req, res, next) => {
+router.get('/check', rateLimit({ windowMs: 60_000, max: 120 }), async (req, res, next) => {
   try {
     const lat = Number(req.query.lat)
     const lng = Number(req.query.lng)
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({ error: 'Parámetros lat/lng inválidos' })
     }
+    // Rango válido en el planeta: una latitud de 900 no es un error de la tienda.
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ error: 'Coordenadas fuera de rango' })
+    }
     const info = await deliveryCheck(lat, lng)
-    res.json({ ...info })
+    res.json({ ...info, storeAddress: undefined })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Cobertura de una dirección sin necesidad de guardarla.
+ *
+ * Es lo que usa el aviso "¿llegamos a tu casa?": el cliente escribe su
+ * dirección o usa su ubicación, y sabe si hay entrega antes de crear nada.
+ */
+router.post('/check', rateLimit({ windowMs: 60_000, max: 120 }), async (req, res, next) => {
+  try {
+    const { lat, lng } = z
+      .object({
+        lat: z.coerce.number().min(-90).max(90),
+        lng: z.coerce.number().min(-180).max(180),
+      })
+      .parse(req.body || {})
+    const info = await deliveryCheck(lat, lng)
+    res.json(info)
   } catch (err) {
     next(err)
   }

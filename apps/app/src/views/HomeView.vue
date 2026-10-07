@@ -4,10 +4,17 @@
       <div class="container">
         <h1>Pide online,<br />te lo llevamos</h1>
         <p v-if="settings.settings" class="hero-sub">
-          {{ settings.settings.storeName }} · Entrega programada · Pedido mínimo {{ money(settings.settings.minOrderAmount) }}
+          {{ settings.settings.storeName }} · Entrega programada
         </p>
       </div>
     </section>
+
+    <!-- Comprobación de cobertura antes de que el cliente arme nada. Es la
+         duda más frecuente: "¿me llegan?". Se responde sin crear cuenta ni
+         guardar la dirección. -->
+    <div class="container coverage-slot">
+      <CoverageChecker v-if="settings.settings" />
+    </div>
 
     <div class="container">
       <div class="toolbar">
@@ -67,8 +74,8 @@
 import { ref, onMounted } from 'vue'
 import { useCatalogStore } from '../stores/catalog.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money } from '../utils/format.js'
 import ProductCard from '../components/ProductCard.vue'
+import CoverageChecker from '../components/CoverageChecker.vue'
 
 const catalog = useCatalogStore()
 const settings = useSettingsStore()
@@ -120,6 +127,15 @@ onMounted(() => {
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
+}
+
+/* El aviso de cobertura sube sobre el borde inferior del hero para que se lea
+   como parte de la invitación, no como un bloque suelto. */
+.coverage-slot {
+  margin-top: -34px;
+  position: relative;
+  z-index: 10;
+  margin-bottom: -4px;
 }
 
 .toolbar {

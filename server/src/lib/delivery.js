@@ -1,5 +1,4 @@
-import { haversineKm, polygonFromCircle, closeRing } from './geo.js'
-import { booleanPointInPolygon, point as turfPoint } from '@turf/turf'
+import { haversineKm, polygonFromCircle, closeRing, dentroDeZona, verticesOf, distanciaAlBordeM } from './geo.js'
 import { prisma } from './prisma.js'
 import { parseLocalDate, startOfLocalDay, minutesOfDay, localDateKey, addDays } from './date.js'
 
@@ -56,10 +55,42 @@ export async function getZoneById(id) {
   return prisma.deliveryZone.findUnique({ where: { id } })
 }
 
-export async function resolveZone(lat, lng, zones) {
-  const list = zones || (await getZones())
-  const pt = turfPoint([Number(lng), Number(lat)])
-  return list.find((z) => z.enabled && booleanPointInPolygon(pt, closeRing(z.polygon))) || null
+/**
+ * Zona que cubre un punto.
+ *
+ * Si el punto cae en varias zonas (el panel avisa de solapamientos, pero nada lo
+ * impide), se elige la de menor superficie: es la mas especifica y por tanto la
+ * que aplica el envio y el minimo que tienen sentido. Antes se tomaba la primera
+ * de la lista, asi que el resultado dependia del orden en que el administrador
+ * dejo las zonas.
+ */
+export function resolveZone(lat, lng, zones) {
+  const candidatos = (zones || []).filter((z) => z.enabled && dentroDeZona(lat, lng, z.polygon))
+  if (candidatos.length === 0) return null
+  if (candidatos.length === 1) return candidatos[0]
+
+  return candidatos.reduce((mejor, z) => {
+    const areaZ = areaKm2(z.polygon)
+    const areaMejor = areaKm2(mejor.polygon)
+    if (areaZ !== areaMejor) return areaZ < areaMejor ? z : mejor
+    // Empate: decide el id, para que el resultado sea siempre el mismo.
+    return String(z.id) < String(mejor.id) ? z : mejor
+  })
+}
+
+/** Area aproximada de un poligono en km2, por el teorema del area. */
+export function areaKm2(polygon) {
+  const vertices = verticesOf(polygon)
+  if (vertices.length < 3) return Infinity
+  const latKm = 110.574
+  const lngKm = 111.32 * Math.cos((vertices[0].lat * Math.PI) / 180)
+  let area = 0
+  for (let i = 0; i < vertices.length - 1; i += 1) {
+    const a = vertices[i]
+    const b = vertices[i + 1]
+    area += a.lng * lngKm * (b.lat * latKm) - b.lng * lngKm * (a.lat * latKm)
+  }
+  return Math.abs(area / 2)
 }
 
 export function computeDeliveryFee(distanceKm, zone) {
@@ -268,18 +299,36 @@ export async function ensureSlotLocks() {
 export async function deliveryCheck(lat, lng) {
   const settings = await getSettings()
   const zones = await getZones()
-  const zone = await resolveZone(lat, lng, zones)
-  const distanceKm = haversineKm(settings.storeLat, settings.storeLng, Number(lat), Number(lng))
+  const zone = resolveZone(lat, lng, zones)
+  const distanceKm = round(haversineKm(settings.storeLat, settings.storeLng, Number(lat), Number(lng)))
+  const storeAddress = settings.storeAddress || ''
+
   if (!zone) {
+    // Distancia a la zona más cercana: convierte un "no" seco en algo accionable
+    // ("moves 400 m al norte y te cubrimos"). Con varias zonas, la más cercana
+    // puede no ser la primera de la lista.
+    let masCercaKm = null
+    let nombreCercana = null
+    for (const z of zones.filter((x) => x.enabled)) {
+      const km = round(distanciaAlBordeM(Number(lat), Number(lng), z.polygon) / 1000)
+      if (masCercaKm === null || km < masCercaKm) {
+        masCercaKm = km
+        nombreCercana = z.name
+      }
+    }
     return {
       withinZone: false,
       zoneId: null,
       zoneName: null,
-      distanceKm: round(distanceKm),
+      distanceKm,
       deliveryFee: 0,
       minOrderAmount: Number(settings.minOrderAmount),
+      nearestZoneKm: masCercaKm,
+      nearestZoneName: nombreCercana,
+      storeAddress,
     }
   }
+
   const deliveryFee = computeDeliveryFee(distanceKm, zone)
   return {
     withinZone: true,
@@ -288,6 +337,9 @@ export async function deliveryCheck(lat, lng) {
     distanceKm: round(distanceKm),
     deliveryFee: round(deliveryFee),
     minOrderAmount: Number(zone.minOrderAmount),
+    nearestZoneKm: 0,
+    nearestZoneName: zone.name,
+    storeAddress,
   }
 }
 

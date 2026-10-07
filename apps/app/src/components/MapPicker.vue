@@ -21,17 +21,27 @@
     <div ref="mapEl" class="map-el"></div>
 
     <div class="map-hint">
-      <span>Haz clic en el mapa o busca tu dirección para ubicar el pin</span>
+      <span v-if="!point">Haz clic en el mapa o busca tu dirección para ubicar el pin</span>
+      <span v-else-if="zoneState === 'loading'" class="muted">Comprobando si te llegamos…</span>
+      <span v-else-if="zoneState === 'error'" class="map-error">
+        No pudimos comprobar la cobertura. Inténtalo de nuevo.
+      </span>
     </div>
-    <p v-if="point && point.withinZone === false" class="out-range">⚠ Esta ubicación está fuera de la zona de entrega</p>
-    <p v-else-if="point && point.withinZone" class="in-range">✓ Dentro de la zona de entrega · {{ point.zoneName }} ({{ point.distanceKm }} km)</p>
+    <p v-if="zoneState === 'out'" class="out-range">
+      <strong>⚠ Aquí no llegamos todavía.</strong>
+      Estás a {{ point.distanceKm }} km de la tienda<template v-if="nearbyZone"> y a {{ nearbyZone }} km de {{ nearbyZoneName }}</template>.
+    </p>
+    <p v-else-if="zoneState === 'in'" class="in-range">
+      ✓ Te llegamos · {{ point.zoneName }} · {{ point.distanceKm }} km · envío {{ money(point.deliveryFee) }}
+    </p>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import L from 'leaflet'
 import { useSettingsStore } from '../stores/settings.js'
+import { money } from '../utils/format.js'
 
 const props = defineProps({
   modelValue: { type: Object, default: null },
@@ -45,12 +55,36 @@ const results = ref([])
 const searching = ref(false)
 const point = ref(props.modelValue ? { ...props.modelValue, withinZone: null } : null)
 
+/**
+ * Estado de la comprobación de cobertura.
+ *
+ * Antes solo existía `withinZone: true | false`. Si la consulta fallaba, el
+ * error se tragaba con `catch { // noop }` y el punto se quedaba en null, de
+ * modo que no se mostraba ningún aviso: el cliente veía un pin en el mapa y
+ * nada más. Ahora se distingue comprobando, dentro, fuera y error.
+ */
+const zoneLoading = ref(false)
+const zoneError = ref('')
+const nearbyZone = ref(null)
+const nearbyZoneName = ref(null)
+
+const zoneState = computed(() => {
+  if (zoneError.value) return 'error'
+  if (zoneLoading.value) return 'loading'
+  if (!point.value || point.value.withinZone === null || point.value.withinZone === undefined) return 'none'
+  return point.value.withinZone ? 'in' : 'out'
+})
+
 let map = null
 let storeMarker = null
 let zoneLayers = null
 let clientMarker = null
 let searchTimer = null
-let geocodeTimer = null
+let lastNominatimCall = 0
+// Las respuestas de /check pueden volver desordenadas si el cliente mueve el pin
+// rápido: sin este contador, una respuesta vieja pisa a la nueva y el aviso
+// muestra la cobertura de otro punto.
+let checkSeq = 0
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org'
 
@@ -59,10 +93,14 @@ function cssVar(name, fallback) {
 }
 
 function storeCoords() {
-  return {
-    lat: settings.storeLocation?.lat || -2.228329,
-    lng: settings.storeLocation?.lng || -79.900772,
+  // La configuración pública sí incluye storeLat/storeLng; antes no llegaban y el
+  // mapa se centraba aquí, en unas coordenadas fijas de Guayaquil.
+  const lat = Number(settings.settings?.storeLat)
+  const lng = Number(settings.settings?.storeLng)
+  if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+    return { lat, lng }
   }
+  return { lat: -2.228329, lng: -79.900772 }
 }
 
 function customIcon(color = '#E53935') {
@@ -125,11 +163,17 @@ function placePin(lat, lng) {
 }
 
 async function checkDistance(lat, lng) {
+  const seq = ++checkSeq
+  zoneLoading.value = true
+  zoneError.value = ''
   try {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/delivery/check?lat=${lat}&lng=${lng}`,
     )
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
+    // Una respuesta obsoleta no debe pisar la actual.
+    if (seq !== checkSeq) return
     point.value = {
       ...point.value,
       withinZone: data.withinZone,
@@ -138,17 +182,26 @@ async function checkDistance(lat, lng) {
       distanceKm: data.distanceKm,
       deliveryFee: data.deliveryFee,
     }
+    nearbyZone.value = data.nearestZoneKm ?? null
+    nearbyZoneName.value = data.nearestZoneName ?? null
     emitUpdate()
   } catch {
-    // noop
+    if (seq !== checkSeq) return
+    // Antes se tragaba el error y el cliente no veía nada. Ahora se dice que no
+    // se pudo comprobar, que es distinto de estar fuera de zona.
+    zoneError.value = 'No pudimos comprobar la cobertura'
+    point.value = { ...point.value, withinZone: null }
+    emitUpdate()
+  } finally {
+    if (seq === checkSeq) zoneLoading.value = false
   }
 }
 
 async function reverseGeocode(lat, lng) {
   try {
-    const res = await fetch(
-      `${NOMINATIM}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=es`,
-    )
+    const url = `${NOMINATIM}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=es`
+    const res = await nominatimFetch(url)
+    if (!res.ok) return
     const data = await res.json()
     const addr = data.address || {}
     point.value = {
@@ -160,7 +213,8 @@ async function reverseGeocode(lat, lng) {
     }
     emitUpdate()
   } catch {
-    // noop
+    // Sin geocodificación inversa el pin sigue puesto: el cliente puede escribir
+    // la calle a mano. No es motivo para romper el mapa.
   }
 }
 
@@ -169,15 +223,36 @@ function emitUpdate() {
   emit('update:modelValue', { ...point.value })
 }
 
+/**
+ * Búsqueda en Nominatim respetando su política de uso: máximo una petición por
+ * segundo. Antes el debounce era de 500 ms, así que escribir "Alborada" disparaba
+ * cuatro búsquedas seguidas y el servicio terminaba bloqueando al cliente.
+ */
+const MIN_GAP_MS = 1100
+
+async function nominatimFetch(url) {
+  const espera = Math.max(0, MIN_GAP_MS - (Date.now() - lastNominatimCall))
+  if (espera > 0) await new Promise((r) => setTimeout(r, espera))
+  lastNominatimCall = Date.now()
+  return fetch(url, {
+    // Nominatim exige identificar la aplicación: sin esto puede bloquear el
+    // tráfico de IPs anónimas de forma permanente.
+    headers: { 'Accept-Language': 'es' },
+  })
+}
+
 async function search() {
   const q = query.value.trim()
   if (!q || q.length < 3) return
   searching.value = true
   const { lat, lng } = storeCoords()
   try {
-    const res = await fetch(
-      `${NOMINATIM}/search?format=json&q=${encodeURIComponent(q)}&countrycodes=ec&limit=6&viewbox=${lng - 0.25},${lat - 0.15},${lng + 0.25},${lat + 0.15}&bounded=1&accept-language=es`,
-    )
+    const url = `${NOMINATIM}/search?format=json&q=${encodeURIComponent(q)}&countrycodes=ec&limit=6&viewbox=${lng - 0.25},${lat - 0.15},${lng + 0.25},${lat + 0.15}&bounded=1&accept-language=es`
+    const res = await nominatimFetch(url)
+    if (!res.ok) {
+      results.value = []
+      return
+    }
     results.value = await res.json()
   } catch {
     results.value = []
@@ -186,6 +261,7 @@ async function search() {
   }
 }
 
+/** El debounce evita escribir letra por letra; el hueco mínimo, el abuso. */
 function onQueryInput() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(search, 500)
@@ -321,6 +397,17 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   font-weight: 600;
   margin-top: 6px;
+  line-height: 1.5;
+}
+
+.out-range strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.map-error {
+  color: var(--red);
+  font-weight: 600;
 }
 </style>
 

@@ -14,7 +14,7 @@
     "build:landing": "npm run build --workspace @distrikriss/landing",
     "build:app": "npm run build --workspace @distrikriss/app",
     "test": "node --test server/tests/*.test.js",
-    "test:e2e": "node server/tests/e2e-facturacion.mjs && node server/tests/verify-schema.mjs && node server/tests/e2e-compra.mjs",
+    "test:e2e": "node server/tests/e2e-facturacion.mjs && node server/tests/verify-schema.mjs && node server/tests/e2e-compra.mjs && node server/tests/e2e-geolocalizacion.mjs",
     "lint": "node --check server/src/index.js && node --check server/src/app.js && node --test server/tests/*.test.js"
   },
   "overrides": {

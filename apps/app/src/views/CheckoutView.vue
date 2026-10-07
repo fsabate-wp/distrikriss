@@ -5,11 +5,37 @@
 
       <div v-if="!loading" class="checkout-layout">
         <div class="checkout-main">
-          <!-- Dirección -->
-          <section class="checkout-section">
-            <h2>1. Dirección de entrega</h2>
+<!-- Aviso de cobertura: solo cuando el cliente aún no ha elegido dirección,
+         para que sepa si le llegamos antes de armar el pedido. -->
+        <CoverageChecker
+          v-if="!hasAddress"
+          @resultado="onCoverageResult"
+        />
 
-            <div v-if="addresses.length" class="address-list">
+        <!-- Dirección -->
+        <section class="checkout-section">
+          <h2>1. Dirección de entrega</h2>
+
+          <div v-if="hasAddress && deliveryCheck" class="fee-banner" :class="{ out: !deliveryCheck.withinZone }">
+            <template v-if="deliveryCheck.withinZone">
+              <strong>{{ deliveryCheck.zoneName }}</strong> · {{ deliveryCheck.distanceKm }} km · Envío {{ money(deliveryCheck.deliveryFee) }}
+            </template>
+            <template v-else>
+              <strong>No cubrimos esta dirección</strong>
+              <span class="muted">
+                · Estás a {{ deliveryCheck.distanceKm }} km de la tienda
+                <template v-if="deliveryCheck.nearestZoneKm != null && deliveryCheck.nearestZoneKm < 5">
+                  · a {{ Math.round(deliveryCheck.nearestZoneKm * 10) / 10 }} km de {{ deliveryCheck.nearestZoneName }}
+                </template>
+              </span>
+            </template>
+          </div>
+
+        <div v-if="deliveryChecking" class="fee-banner loading">
+          <span class="muted">Comprobando la cobertura…</span>
+        </div>
+
+        <div v-if="addresses.length" class="address-list">
               <button
                 v-for="addr in addresses"
                 :key="addr.id"
@@ -56,15 +82,7 @@
               </div>
             </div>
 
-            <div v-if="deliveryCheck" class="fee-banner" :class="{ out: !deliveryCheck.withinZone }">
-              <template v-if="deliveryCheck.withinZone">
-                <strong>{{ deliveryCheck.zoneName }}</strong> · {{ deliveryCheck.distanceKm }} km · Envío {{ money(deliveryCheck.deliveryFee) }}
-              </template>
-              <template v-else>
-                Fuera de la zona de entrega ({{ deliveryCheck.distanceKm }} km)
-              </template>
-            </div>
-          </section>
+            </section>
 
           <!-- Entrega -->
           <section class="checkout-section">
@@ -183,6 +201,7 @@ import { useSettingsStore } from '../stores/settings.js'
 import { money, discountedPrice } from '../utils/format.js'
 import MapPicker from '../components/MapPicker.vue'
 import DeliverySlotPicker from '../components/DeliverySlotPicker.vue'
+import CoverageChecker from '../components/CoverageChecker.vue'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -202,6 +221,22 @@ const delivery = ref(null)
 const payment = ref('COD')
 const notes = ref('')
 const deliveryCheck = ref(null)
+// La cobertura se comprueba al elegir dirección. Antes no había estado de
+// carga: el botón quedaba habilitado durante la consulta y, si fallaba, el
+// cliente discoverría el problema al confirmar.
+const deliveryChecking = ref(false)
+
+/** ¿Hay ya una dirección elegida (guardada o nueva con pin)? */
+const hasAddress = computed(() => {
+  if (addressMode.value === 'existing') return Boolean(selectedAddressId.value)
+  return newAddress.value.lat !== null && newAddress.value.lng !== null
+})
+
+/** ¿La dirección elegida está dentro de alguna zona? null = sin comprobar. */
+const inZone = computed(() => {
+  if (!deliveryCheck.value) return null
+  return deliveryCheck.value.withinZone === true
+})
 const error = ref('')
 const submitting = ref(false)
 const billing = ref({ type: 'CONSUMO_FINAL', idType: 'RUC', id: '', name: '', address: '', email: '' })
@@ -220,6 +255,10 @@ const billingValid = computed(() => {
 const canSubmit = computed(() => {
   if (cart.items.length === 0) return false
   if (!activeAddressValid.value) return false
+  // La cobertura debe estar comprobada y ser afirmativa. Antes solo se miraba
+  // que hubiera una dirección elegida, así que una dirección guardada fuera de
+  // zona dejaba el botón activo y el rechazo llegaba del servidor.
+  if (inZone.value !== true) return false
   // El mínimo se comprueba aquí para no gastar un envío en un rechazo evitable,
   // pero el servidor lo vuelve a validar: es la regla que manda.
   if (belowMinOrder.value) return false
@@ -239,9 +278,17 @@ const belowMinOrder = computed(() => faltaParaMinimo.value > 0.01)
 
 const submitHint = computed(() => {
   if (cart.items.length === 0) return 'Tu carrito está vacío'
-  if (!activeAddressValid.value) return 'Selecciona una dirección dentro de una zona de entrega'
+  if (!activeAddressValid.value) return 'Selecciona una dirección y comprueba si llegamos'
+  if (deliveryChecking.value) return 'Comprobando si llegamos a esa dirección…'
+  if (deliveryCheck.value && !deliveryCheck.value.withinZone) {
+    const cerca = deliveryCheck.value.nearestZoneKm
+    return cerca != null && cerca < 5
+      ? `No cubrimos esa dirección: está a ${Math.round(cerca * 10) / 10} km de ${deliveryCheck.value.nearestZoneName}.`
+      : 'No cubrimos esa dirección todavía. Estamos ampliar la zona de entrega.'
+  }
+  if (!deliveryCheck.value) return 'Comprueba si llegamos a esa dirección'
   if (belowMinOrder.value) {
-    return `El pedido mínimo en tu zona es ${money(deliveryCheck.minOrderAmount)} en productos. ` +
+    return `El pedido mínimo en tu zona es ${money(deliveryCheck.value.minOrderAmount)} en productos. ` +
       `Te faltan ${money(faltaParaMinimo)}. El envío no cuenta para el mínimo.`
   }
   if (!delivery.value) return 'Elige fecha y horario de entrega'
@@ -258,7 +305,7 @@ const activeAddressValid = computed(() => {
     return selectedAddressId.value !== null
   }
   const a = newAddress.value
-  return a.lat !== null && a.lng !== null && a.withinZone === true && a.street && a.city
+  return a.lat !== null && a.lng !== null && a.street && a.city
 })
 
 async function loadAddresses() {
@@ -280,17 +327,52 @@ async function loadAddresses() {
   }
 }
 
+/**
+ * Comprueba la cobertura de una dirección.
+ *
+ * Se hace por POST (y no GET con la query) para no meter coordenadas en los
+ * logs de acceso ni en el historial del navegador. El estado de carga importa:
+ * sin él, el botón se habilita antes de saber si hay cobertura.
+ */
+async function checkCoverage(lat, lng) {
+  deliveryChecking.value = true
+  try {
+    deliveryCheck.value = await api.post('/api/delivery/check', { lat, lng })
+  } catch (err) {
+    deliveryCheck.value = null
+    error.value =
+      err.status === 429
+        ? 'Demasiadas consultas seguidas. Espera un momento.'
+        : 'No pudimos comprobar la cobertura de esa dirección.'
+  } finally {
+    deliveryChecking.value = false
+  }
+}
+
 async function selectAddress(addr) {
   selectedAddressId.value = addr.id
   addressMode.value = 'existing'
-  const check = await api.get('/api/delivery/check', { lat: addr.lat, lng: addr.lng })
-  deliveryCheck.value = check
+  delivery.value = null
+  await checkCoverage(addr.lat, addr.lng)
 }
+
+/** Resultado del aviso "¿llegamos a tu casa?", que no guarda nada. */
+function onCoverageResult(data) {
+  if (!data) return
+  // Se previsualiza la cobertura en el resumen, pero no fija la dirección: el
+  // cliente decide si guardarla.
+  estimatedCoverage.value = data
+}
+
+const estimatedCoverage = ref(null)
 
 function toggleNewAddress() {
   addressMode.value = addressMode.value === 'new' ? 'existing' : 'new'
-  if (addressMode.value === 'new') deliveryCheck.value = null
-  else if (selectedAddressId.value) {
+  delivery.value = null
+  if (addressMode.value === 'new') {
+    deliveryCheck.value = null
+    estimatedCoverage.value = null
+  } else if (selectedAddressId.value) {
     const addr = addresses.value.find((a) => a.id === selectedAddressId.value)
     if (addr) selectAddress(addr)
   }

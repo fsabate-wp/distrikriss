@@ -24,6 +24,13 @@ const PUBLIC_FIELDS = {
   openHours: true,
   slots: true,
   sriEnabled: true,
+  // El mapa de cobertura necesita saber donde esta la tienda. Sin estos campos,
+  // settings.storeLocation llegaba con undefined y el mapa se centraba en unas
+  // coordenadas fijas que no tienen relacion con la tienda real.
+  storeLat: true,
+  storeLng: true,
+  storeAddress: true,
+  deliveryRadiusKm: true,
 }
 
 /**
