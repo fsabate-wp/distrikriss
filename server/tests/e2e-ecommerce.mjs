@@ -329,16 +329,38 @@ await prisma.product.deleteMany({
   check(b.products.length === 0, 'un termino de una letra no devuelve medio catalogo')
 
   // Ordenes y filtros siguen conviviendo con la busqueda.
+  //
+  // No se comprueba `length === 1`: el catálogo de la base puede tener productos
+  // reales del seed, y una prueba que exige estar solo se rompe en cuanto la
+  // tienda tiene existencias. Se comprueba que aparece el producto de la prueba
+  // y que el orden se respeta entre los resultados.
   b = await buscar('Papa', '&sort=price_desc')
-  check(b.products.length === 1, 'buscar con orden explicito funciona')
+  check(b.products.some((p) => p.name === 'Papa para la RIDE'), 'buscar con orden explicito funciona')
+  const preciosDesc = b.products.map((p) => Number(p.price))
+  check(
+    preciosDesc.every((v, i) => i === 0 || preciosDesc[i - 1] >= v),
+    `ordena por precio descendente (${preciosDesc.slice(0, 4).join(', ')})`,
+  )
   b = await buscar('jugo', '&sort=price_asc')
-  check(b.products.length === 1, 'orden por precio ascendente con busqueda')
+  check(b.products.some((p) => p.name === 'Jugo de Mango'), 'orden por precio ascendente con busqueda')
+  const preciosAsc = b.products.map((p) => Number(p.price))
+  check(
+    preciosAsc.every((v, i) => i === 0 || preciosAsc[i - 1] <= v),
+    `el precio ascendente sale ordenado (${preciosAsc.slice(0, 4).join(', ')})`,
+  )
   b = await buscar('Papa', `&category=${cat.slug}`)
-  check(b.products.length === 1, 'la busqueda respeta el filtro de categoria')
+  check(
+    b.products.length > 0 && b.products.every((p) => p.name === 'Papa para la RIDE'),
+    'la busqueda respeta el filtro de categoria',
+  )
   b = await buscar('Jugo', `&category=${cat.slug}`)
-  check(b.products.length === 1, 'filtro de categoria con otro producto de la misma')
+  check(
+    b.products.length > 0 && b.products.every((p) => p.name === 'Jugo de Mango'),
+    'filtro de categoria con otro producto de la misma',
+  )
   r = await fetch(`${BASE}/api/catalog/products?all=true`)
   check(r.ok, 'el modo all=true del checkout sigue disponible')
+  
 
   console.log('\n=== 6b. El precio es el de la bandeja, no el del gramo ===')
   // El caso real del catálogo: champiñones a $1 la bandeja de 400 g. Con la
