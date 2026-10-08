@@ -169,7 +169,12 @@
           <h2>Resumen</h2>
           <div class="summary-items">
             <div v-for="item in cart.items" :key="item.productId" class="summary-item">
-              <span>{{ item.name }} × {{ formatQty(item.quantity) }} {{ item.unit }}<span v-if="item.presentation" class="muted"> · {{ item.presentation }}</span></span>
+              <!-- Igual que en el carrito: en cajas, con el peso como detalle. -->
+              <span>
+                {{ item.name }} × {{ cantidadDe(item).principal }}
+                <small v-if="cantidadDe(item).detalle" class="muted">({{ cantidadDe(item).detalle }})</small>
+                <span v-if="item.presentation" class="muted"> · {{ item.presentation }}</span>
+              </span>
               <span>{{ money(item.price * item.quantity) }}</span>
             </div>
           </div>
@@ -199,7 +204,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money, discountedPrice, precioPorUnidad } from '../utils/format.js'
+import { money, discountedPrice, precioPorUnidad, descripcionCantidad } from '../utils/format.js'
 import MapPicker from '../components/MapPicker.vue'
 import DeliverySlotPicker from '../components/DeliverySlotPicker.vue'
 import CoverageChecker from '../components/CoverageChecker.vue'
@@ -211,6 +216,16 @@ const settings = useSettingsStore()
 function formatQty(v) {
   const n = Number(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+/** "2 cajas" con los 800 gramos como detalle, igual que en el carrito. */
+function cantidadDe(item) {
+  return descripcionCantidad({
+    quantity: item.quantity,
+    minQuantity: item.minQuantity,
+    presentation: item.presentation,
+    unit: item.unit,
+  })
 }
 
 const loading = ref(true)

@@ -29,6 +29,70 @@ export function precioPorUnidad(precio, minQuantity) {
   return Math.round((p / unidades) * 1e6) / 1e6
 }
 
+/**
+ * Cómo se llama la unidad en la que realmente se vende un producto.
+ *
+ * El tendero compra y vende cajas, fundas y bandejas; los gramos solo sirven
+ * para pesar. La presentación del catálogo ("Caja de plástico", "Funda
+ * poliester") dice cuál es, así que se usa su primera palabra en vez de
+ * inventar un nombre.
+ */
+export function nombreUnidadVenta(presentation, unit) {
+  const p = String(presentation || '').trim()
+  if (p) return p.split(/[\s-]+/)[0].toLowerCase()
+  const u = String(unit || '').toLowerCase()
+  if (['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)) return 'bandeja'
+  return 'unidad'
+}
+
+/**
+ * Plural español sencillo.
+ *
+ * Alcanza para "caja" -> "cajas" y "unidad" -> "unidades". No cubre el resto de
+ * la lengua, y no hace falta: los empaque tienen nombre propio en la
+ * presentación del catálogo.
+ */
+export function pluralizar(palabra, n) {
+  if (Math.abs(Number(n) - 1) < 1e-9) return palabra
+  if (/(z|d)$/i.test(palabra)) return `${palabra}es`
+  if (/[aeiouáéíóú]$/i.test(palabra)) return `${palabra}s`
+  return `${palabra}s`
+}
+
+/**
+ * Cómo se lee una cantidad en el carrito y el checkout.
+ *
+ * Un producto que se vende por empaque se lee en empaque: "2 cajas", con los
+ * 800 gramos como dato secundario. Leer "800 Gramos" hides lo que el cliente
+ * compró y parece queumbentó 800 piezas.
+ *
+ * Devuelve dos partes: la principal (cuántas cajas) y el detalle (el peso).
+ */
+export function descripcionCantidad({ quantity, minQuantity, presentation, unit }) {
+  const n = Number(quantity) || 0
+  const unidades = unidadesDeVenta(minQuantity)
+
+  if (unidades <= 1) {
+    return { principal: `${formatQtyCorto(n)} ${unit || 'unidad'}`, detalle: '' }
+  }
+
+  const cajas = Math.round((n / unidades) * 100) / 100
+  const nombre = nombreUnidadVenta(presentation, unit)
+  const principal = `${formatQtyCorto(cajas)} ${pluralizar(nombre, cajas)}`
+  // El peso solo tiene sentido si el producto se mide en masa o volumen.
+  const detalle = ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(
+    String(unit || '').toLowerCase(),
+  )
+    ? `${formatQtyCorto(n)} ${String(unit).toLowerCase()}`
+    : `${formatQtyCorto(unidades)} por ${nombre}`
+  return { principal, detalle }
+}
+
+function formatQtyCorto(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
 export function formatDate(dateStr) {
   const d = new Date(dateStr)
   return d.toLocaleDateString('es-EC', {

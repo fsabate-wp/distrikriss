@@ -22,9 +22,9 @@
             <div class="cart-item-info">
               <p class="cart-item-name">{{ item.name }}</p>
               <!--
-                El precio que se muestra es el de la bandeja, que es como lo
-               lo fija el tendero. `item.price` es el precio por gramo y solo
-                sirve para multiplicar por la cantidad: enseñarlo daría $0.00.
+                El precio que se muestra es el del empaque, que es como lo fija
+                el tendero. `item.price` es el precio por gramo y solo sirve para
+                multiplicar por la cantidad: enseñarlo daría $0.00.
               -->
               <p class="cart-item-meta">
                 {{ money(precioVentaDe(item)) }}
@@ -32,13 +32,19 @@
                 <span v-else>/ {{ item.unit }}</span>
                 <span v-if="item.presentation"> · {{ item.presentation }}</span>
               </p>
-              <p v-if="esVentaPorEmpaque(item)" class="cart-item-meta">
-                {{ formatQty(item.quantity) }} {{ item.unit }} en total
+              <!--
+                Lo que el cliente compró son cajas, no gramos. "800 Gramos" es lo
+                mismo que "2 cajas" pero suena a 800 piezas sueltas.
+              -->
+              <p class="cart-item-cant">
+                {{ cantidadDe(item).principal }}
+                <small v-if="cantidadDe(item).detalle">{{ cantidadDe(item).detalle }}</small>
               </p>
               <div class="qty-control">
-                <button @click="cart.decrement(item.productId)">−</button>
-                <span>{{ formatQty(item.quantity) }} {{ item.unit }}</span>
-                <button @click="cart.increment(item.productId)">+</button>
+                <button @click="cart.decrement(item.productId)" :aria-label="`Quitar una ${nombreDe(item)}`">−</button>
+                <button class="qty-add" @click="cart.increment(item.productId)" :aria-label="`Añadir una ${nombreDe(item)}`">
+                  + {{ nombreDe(item) }}
+                </button>
               </div>
             </div>
             <div class="cart-item-right">
@@ -93,7 +99,7 @@ import { useCartStore } from '../stores/cart.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { computed } from 'vue'
-import { money, unidadesDeVenta } from '../utils/format.js'
+import { money, unidadesDeVenta, descripcionCantidad, nombreUnidadVenta } from '../utils/format.js'
 
 function formatQty(v) {
   const n = Number(v)
@@ -110,9 +116,26 @@ function precioVentaDe(item) {
   return Number(item.price || 0) * unidadesDeVenta(item.minQuantity)
 }
 
-/** ¿El producto se vende por empaque (bandeja, funda) en vez de por unidad? */
+/** ¿El producto se vende por empaque (caja, funda, bandeja) y no por unidad? */
 function esVentaPorEmpaque(item) {
   return unidadesDeVenta(item.minQuantity) > 1
+}
+
+/** "2 cajas", con los 800 gramos como dato secundario. */
+function cantidadDe(item) {
+  return descripcionCantidad({
+    quantity: item.quantity,
+    minQuantity: item.minQuantity,
+    presentation: item.presentation,
+    unit: item.unit,
+  })
+}
+
+/** Nombre en singular, para los botones: "Añadir una caja". */
+function nombreDe(item) {
+  return esVentaPorEmpaque(item)
+    ? nombreUnidadVenta(item.presentation, item.unit)
+    : (item.unit || 'unidad').toLowerCase()
 }
 
 defineProps({ open: Boolean })
@@ -288,10 +311,29 @@ function goHome() {
   justify-content: center;
 }
 
-.qty-control span {
-  font-weight: 700;
-  min-width: 18px;
-  text-align: center;
+/*
+  El botón de añadir dice QUÉ añade. "+" a secas no deja claro si suma un gramo
+  o una caja, y es justo la duda que hace que la gente no se atreva a tocarlo.
+*/
+.qty-control .qty-add {
+  width: auto;
+  padding: 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cart-item-cant {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--dark);
+  margin-top: 2px;
+}
+
+.cart-item-cant small {
+  font-weight: 400;
+  color: var(--gray);
+  margin-left: 6px;
 }
 
 .cart-item-right {

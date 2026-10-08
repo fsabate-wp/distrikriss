@@ -54,6 +54,9 @@ function precioPorUnidadCliente(precio, minQuantity) {
   return Math.round((p / unidades) * 1e6) / 1e6
 }
 
+/** Cómo se nombra el empaque, el plural y la lectura de una cantidad. */
+const fmt = await import('../../apps/app/src/utils/format.js')
+
 test('el precio con descuento coincide entre cliente y servidor', () => {
   // Si divergen, el carrito muestra una cifra y el pedido cobra otra: es el
   // defecto mas grave posible en una tienda.
@@ -107,6 +110,77 @@ test('el precio por unidad coincide entre cliente y servidor', () => {
   }
   assert.equal(divergencias, 0, `${divergencias} de ${casos.length} casos difieren`)
   assert.ok(casos.length > 50000, `solo se probaron ${casos.length} casos`)
+})
+
+// ---------------------------------------------------------------------------
+// Cómo se lee una cantidad.
+//
+// Lo que el cliente compra son cajas, no gramos. "800 Gramos" en el carrito es
+// lo mismo que "2 cajas", pero suena a 800 piezas sueltas y confunde.
+// ---------------------------------------------------------------------------
+
+test('el nombre del empaque sale de la presentacion del catalogo', () => {
+  assert.equal(fmt.nombreUnidadVenta('Caja de plástico', 'Gramos'), 'caja')
+  assert.equal(fmt.nombreUnidadVenta('Funda de plástico', 'Unidad'), 'funda')
+  assert.equal(fmt.nombreUnidadVenta('Funda poliester', 'Gramos'), 'funda')
+  assert.equal(fmt.nombreUnidadVenta('Bolsa', 'Gramos'), 'bolsa')
+  // Sin presentación, un producto en peso es una bandeja.
+  assert.equal(fmt.nombreUnidadVenta(null, 'Gramos'), 'bandeja')
+  assert.equal(fmt.nombreUnidadVenta('', 'Kilo'), 'bandeja')
+  assert.equal(fmt.nombreUnidadVenta(null, 'Unidad'), 'unidad')
+})
+
+test('el plural se aplica segun la cantidad', () => {
+  assert.equal(fmt.pluralizar('caja', 1), 'caja')
+  assert.equal(fmt.pluralizar('caja', 2), 'cajas')
+  assert.equal(fmt.pluralizar('caja', 3), 'cajas')
+  assert.equal(fmt.pluralizar('funda', 1), 'funda')
+  assert.equal(fmt.pluralizar('funda', 4), 'fundas')
+  // "unidad" acaba en consonante y hace "unidades".
+  assert.equal(fmt.pluralizar('unidad', 2), 'unidades')
+  assert.equal(fmt.pluralizar('bandeja', 1), 'bandeja')
+})
+
+test('una cantidad a granel se lee en cajas, con los gramos de detalle', () => {
+  // Champiñones: caja de 400 g, se pidieron 800 g.
+  const d = fmt.descripcionCantidad({
+    quantity: 800,
+    minQuantity: 400,
+    presentation: 'Caja de plástico',
+    unit: 'Gramos',
+  })
+  assert.equal(d.principal, '2 cajas', 'se lee en cajas, no en gramos')
+  assert.equal(d.detalle, '800 gramos', 'el peso queda como dato secundario')
+  assert.ok(!/^800/.test(d.principal), 'la cifra grande no son los 800 gramos')
+})
+
+test('una sola caja se lee en singular y sin decimales', () => {
+  const d = fmt.descripcionCantidad({
+    quantity: 400,
+    minQuantity: 400,
+    presentation: 'Caja de plástico',
+    unit: 'Gramos',
+  })
+  assert.equal(d.principal, '1 caja')
+  assert.equal(d.detalle, '400 gramos')
+})
+
+test('una funda de frutas se lee en fundas, con el contenido de detalle', () => {
+  // "Unidad" con mínimo 4 no son 4 unidades sueltas: es una funda.
+  const d = fmt.descripcionCantidad({
+    quantity: 12,
+    minQuantity: 4,
+    presentation: 'Funda de plástico',
+    unit: 'Unidad',
+  })
+  assert.equal(d.principal, '3 fundas', 'se lee en fundas aunque no se pese')
+  assert.equal(d.detalle, '4 por funda', 'y el detalle dice cuántas lleva cada una')
+})
+
+test('un producto que se vende unidad a unidad no lleva empaque', () => {
+  const d = fmt.descripcionCantidad({ quantity: 3, minQuantity: 1, unit: 'Kilo' })
+  assert.equal(d.principal, '3 Kilo')
+  assert.equal(d.detalle, '', 'no hay detalle que añadir')
 })
 
 test('el precio del catálogo es el de la unidad minima, no el de una unidad', () => {

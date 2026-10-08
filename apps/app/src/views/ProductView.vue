@@ -31,8 +31,8 @@
           </p>
           <p class="muted price-detail">
             <template v-if="vendePorEmpaque">
-              El precio es de {{ pluralPresentacion }} completa{{ formatQty(minQty) === '1' ? '' : 's' }} de
-              {{ formatQty(minQty) }} {{ unitLabel }}, no por {{ unitLabel }}
+              El precio es de {{ empaqueEnPlural }} completa{{ formatBandejas(bandejas) === '1' ? '' : 's' }}
+              de {{ formatQty(minQty) }} {{ unitLabel }}, no por {{ unitLabel }}
             </template>
             <template v-else>
               Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ unitLabel }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }} {{ unitLabel }}</span>
@@ -43,27 +43,30 @@
 
           <div class="purchase-row">
             <!--
-              A granel el cliente elige bandejas enteras, no gramos: 1, 2 o 3.
-              Es lo que se pesa en el mostrador, así que un selector de unidades
-              es más claro que un campo de gramos que habría que multiplicar a
-              mano. El campo numérico queda para el resto de productos.
+              Cuando el producto se vende por empaque, el cliente elige cajas
+              enteras: 1, 2 o 3. Es lo que se pesa en el mostrador y lo que la
+              tienda cuenta, así que un selector de cajas es más claro que un
+              campo de gramos que habría que multiplicar a mano. El campo
+              numérico queda para lo que sí se vende unidad a unidad.
             -->
-            <div v-if="esAGranel" class="bandeja-picker">
+            <div v-if="vendePorEmpaque" class="empaque-picker">
               <button
                 class="btn btn-outline btn-sm"
                 :disabled="isOutOfStock || bandejas <= 1"
                 @click="cambiarBandejas(-1)"
+                :aria-label="`Quitar una ${nombreEmpaque}`"
               >
                 −
               </button>
-              <div class="bandeja-valor">
+              <div class="empaque-valor">
                 <strong>{{ formatBandejas(bandejas) }}</strong>
-                <small>{{ pluralBandejas }}</small>
+                <small>{{ empaqueEnPlural }}</small>
               </div>
               <button
                 class="btn btn-outline btn-sm"
                 :disabled="isOutOfStock"
                 @click="cambiarBandejas(1)"
+                :aria-label="`Añadir una ${nombreEmpaque}`"
               >
                 +
               </button>
@@ -84,7 +87,9 @@
             </div>
 
             <span class="qty-hint">
-              {{ formatQty(qty) }} {{ unitLabel }} · {{ money(lineTotal) }}
+              {{ descripcionDeCantidad.principal }}
+              <small v-if="descripcionDeCantidad.detalle">{{ descripcionDeCantidad.detalle }}</small>
+              · {{ money(lineTotal) }}
             </span>
 
             <button class="btn btn-secondary" :disabled="isOutOfStock || !qtyValido" @click="add">
@@ -92,8 +97,8 @@
             </button>
           </div>
 
-          <p v-if="esAGranel && !isOutOfStock" class="bulk-note">
-            No hay fracciones: se pesa {{ pluralPresentacion }} enter{{ formatBandejas(bandejas) === '1' ? 'a' : 'as' }}.
+          <p v-if="vendePorEmpaque && !isOutOfStock" class="bulk-note">
+            No hay fracciones: se venden {{ empaqueParaFrase }} enteras.
           </p>
           <p v-if="!isOutOfStock && !qtyValido" class="error-msg">
             El mínimo es {{ formatQty(minQty) }} {{ unitLabel }}
@@ -117,7 +122,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
-import { money, discountedPrice, precioPorUnidad, unidadesDeVenta } from '../utils/format.js'
+import { money, discountedPrice, precioPorUnidad, unidadesDeVenta, descripcionCantidad, nombreUnidadVenta, pluralizar } from '../utils/format.js'
 
 const route = useRoute()
 const cart = useCartStore()
@@ -131,23 +136,18 @@ const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number
 const isOutOfStock = computed(() => product.value != null && Number(product.value.stock) === 0)
 const minQty = computed(() => Number(product.value?.minQuantity) || 1)
 const stepQty = computed(() => Number(product.value?.stepQuantity) || 1)
-/** A granel: el peso del empaque es lo que se vende, en bandejas enteras. */
-const esAGranel = computed(() => {
-  const u = (product.value?.unit || '').toLowerCase()
-  return ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)
-})
 /**
  * ¿El precio es el de un empaque y no el de una unidad de medida?
  *
- * Si el mínimo es mayor que 1, el tendero puso el precio de la bandeja o de la
+ * Si el mínimo es mayor que 1, el tendero puso el precio de la caja o de la
  * funda. En ese caso el precio se anuncia por empaque, porque un "/ g" al lado
  * de $1 haría creer que el gramo cuesta un dólar.
  */
 const vendePorEmpaque = computed(() => unidadesDeVenta(product.value?.minQuantity) > 1)
 
-/** Cuántas bandejas equivalen a la cantidad actual. */
+/** Cuántos empaques equivalen a la cantidad actual. */
 const bandejas = computed(() => {
-  if (!esAGranel.value || minQty.value <= 0) return null
+  if (!vendePorEmpaque.value || minQty.value <= 0) return null
   return Math.round((Number(qty.value) || 0) / minQty.value * 100) / 100
 })
 const unitLabel = computed(() => {
@@ -186,7 +186,7 @@ function decQty() {
   qty.value = Math.max(minQty.value, next)
 }
 
-/** Añade o quita una bandeja entera. Nunca baja de una. */
+/** Añade o quita un empaque entero. Nunca baja de uno. */
 function cambiarBandejas(delta) {
   const actual = Math.round((Number(qty.value) || 0) / minQty.value)
   const siguiente = Math.max(1, actual + delta)
@@ -197,21 +197,31 @@ function formatBandejas(n) {
   const v = Number(n) || 0
   return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '')
 }
-const pluralBandejas = computed(() => {
-  const n = Math.round(Number(bandejas.value) || 1)
-  return n === 1 ? 'bandeja' : 'bandejas'
-})
-/** Cómo llama la tienda a la unidad de venta: "bandeja", "caja", "funda"… */
-const pluralPresentacion = computed(() => {
-  const p = (product.value?.presentation || '').trim().toLowerCase()
-  if (p) return p
-  return esAGranel.value ? 'bandejas' : 'unidades'
-})
+
+/** Nombre en singular del empaque: "caja", "funda", "bandeja". */
+const nombreEmpaque = computed(() => nombreUnidadVenta(product.value?.presentation, product.value?.unit))
+/** Con plural ya aplicado, para escribir en frase: "2 cajas de 400 g". */
+const empaqueEnPlural = computed(() => pluralizar(nombreEmpaque.value, bandejas.value))
+/** Con plural ya aplicado, para "caja completa": "se pesan cajas enteras". */
+const empaqueParaFrase = computed(() =>
+  pluralizar(nombreEmpaque.value, 2),
+)
+/** "2 cajas" con "800 gramos" como detalle, igual que en el carrito. */
+const descripcionDeCantidad = computed(() =>
+  descripcionCantidad({
+    quantity: qty.value,
+    minQuantity: product.value?.minQuantity,
+    presentation: product.value?.presentation,
+    unit: product.value?.unit,
+  }),
+)
+
 /**
  * Ajusta lo que el cliente escribió a un múltiplo del paso hacia arriba.
  *
- * A granel el paso es la bandeja, así que 635 g con bandeja de 400 se guarda
- * como 800: dos bandejas. Nunca hacia abajo, porque podría quedarle corto.
+ * Cuando se vende por empaque el paso es el empaque, así que 635 g con bandeja
+ * de 400 se guarda como 800: dos bandejas. Nunca hacia abajo, porque podría
+ * quedarle corto.
  */
 function normalizarQty() {
   const n = Number(qty.value)
@@ -379,13 +389,13 @@ onMounted(load)
   Selector de bandejas. Muestra el número grande de bandejas y el peso debajo,
   que es como se lee en el mostrador: "2 bandejas / 800 g".
 */
-.bandeja-picker {
+.empaque-picker {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.bandeja-picker button {
+.empaque-picker button {
   min-width: 44px;
   height: 46px;
   border: 1.5px solid var(--gray-mid);
@@ -396,17 +406,17 @@ onMounted(load)
   color: var(--green-dark);
 }
 
-.bandeja-picker button:hover:not(:disabled) {
+.empaque-picker button:hover:not(:disabled) {
   border-color: var(--green-light);
   background: var(--gray-light);
 }
 
-.bandeja-picker button:disabled {
+.empaque-picker button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.bandeja-valor {
+.empaque-valor {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -414,13 +424,13 @@ onMounted(load)
   line-height: 1.15;
 }
 
-.bandeja-valor strong {
+.empaque-valor strong {
   font-size: 1.3rem;
   font-weight: 800;
   color: var(--green-dark);
 }
 
-.bandeja-valor small {
+.empaque-valor small {
   font-size: 0.72rem;
   color: var(--gray);
   text-transform: lowercase;
