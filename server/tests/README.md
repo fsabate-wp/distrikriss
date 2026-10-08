@@ -163,7 +163,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 150 pruebas unitarias
+npm test                              # 156 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```
@@ -173,4 +173,5 @@ docker-compose.dev.yml up -d`) y las migraciones aplicadas.
 
 `e2e-ecommerce.mjs` cubre las rutas del cliente: aislamiento entre usuarios en
 la RIDE, los tres estados del comprobante y la descarga del PDF.
+
 

@@ -22,7 +22,7 @@
       <div class="header-actions">
         <button class="cart-btn" @click="$emit('open-cart')" aria-label="Abrir carrito">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          <span v-if="cart.count > 0" class="cart-badge">{{ cart.count }}</span>
+          <span v-if="cart.unitCount > 0" class="cart-badge">{{ formatBadge(cart.unitCount) }}</span>
         </button>
         <button class="navbar-toggle" @click="menuOpen = !menuOpen" :aria-label="menuOpen ? 'Cerrar menú' : 'Abrir menú'">
           <span :class="{ open: menuOpen }"></span>
@@ -48,6 +48,15 @@ async function logout() {
   await auth.logout()
   menuOpen.value = false
   router.push({ name: 'home' })
+}
+
+/**
+ * El contador va en cajas, no en gramos. Y de 20 en 20 en lugar de "20+":
+ * un número redondo deja claro que son piezas y no gramos.
+ */
+function formatBadge(n) {
+  const v = Math.round(Number(n) || 0)
+  return v > 20 ? '20+' : String(v)
 }
 </script>
 

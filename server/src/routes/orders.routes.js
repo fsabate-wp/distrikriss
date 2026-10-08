@@ -34,6 +34,7 @@ const {
   precioConDescuento,
   precioPorUnidad,
   nombreUnidadVenta,
+  pasoDeVenta,
   descuentoValido,
   respetaPaso,
   MAX_CANTIDAD_LINEA,
@@ -301,7 +302,12 @@ router.post('/', limits.checkout, async (req, res, next) => {
       // stepQuantity nunca se validaba en el servidor: el cliente sugiere el paso
       // con sus botones, pero una peticion propia podia pedir 0.333 kg cuando el
       // paso es de 0.5 kg, con precio fraccionado.
-      const step = product.stepQuantity != null ? Number(product.stepQuantity) : 1
+      //
+      // Si el producto se vende por empaque, el paso es el empaque aunque el
+      // catálogo guarde otro (una caja de 635 g con paso de 30 g venía de una
+      // importación antigua). Si no, el servidor aceptaría 665 g, que es
+      // justamente la fracción que el tendero no vende.
+      const step = pasoDeVenta(product.minQuantity, product.stepQuantity)
       if (step > 0 && !respetaPaso(item.quantity, step)) {
         const pasos = Math.max(1, Math.round(item.quantity / step))
         throw Object.assign(

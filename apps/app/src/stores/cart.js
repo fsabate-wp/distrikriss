@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { discountedPrice, precioPorUnidad } from '../utils/format.js'
+import { discountedPrice, precioPorUnidad, pasoDeVenta } from '../utils/format.js'
 
 const STORAGE_KEY = 'distrikriss-cart'
 
@@ -41,12 +41,39 @@ function cantidadDe(items, productId) {
     .reduce((acc, i) => acc + Number(i.quantity || 0), 0)
 }
 
+/**
+ * Cuánto suma un botón de "+" o de "−".
+ *
+ * Cuando el producto se vende por empaque, el botón mueve UN empaque entero, no
+ * el paso de venta en gramos. Con el paso se veía "665 gramos" en el icono del
+ * cabecera y el "+ caja" añadía 30 gramos en vez de una caja, según el valor
+ * que hubiera en el paso del producto.
+ *
+ * El paso sigue importando: es lo que el servidor valida. Pero lo que la persona
+ * ve y toca son cajas.
+ */
+function saltoDe(item) {
+  return pasoDeVenta(item?.minQuantity, item?.stepQuantity)
+}
+
 export const useCartStore = defineStore('cart', {
   state: () => ({
     items: loadCart(),
   }),
   getters: {
     count: (s) => s.items.reduce((acc, i) => acc + Number(i.quantity || 0), 0),
+    /**
+     * Cuántas cosas compró el cliente, en la unidad en la que se venden.
+     *
+     * `count` suma gramos: con una caja de 635 g marcaba 665 en el icono, que no
+     * quiere decir nada. Aquí se cuentan cajas: 2 cajas de uva son 2, no 1270.
+     */
+    unitCount: (s) =>
+      s.items.reduce((acc, i) => {
+        const cantidad = Number(i.quantity || 0)
+        const minQ = Number(i.minQuantity) || 1
+        return acc + (minQ > 1 ? Math.round((cantidad / minQ) * 100) / 100 : cantidad)
+      }, 0),
     // El servidor redondea cada línea antes de sumar (server/src/lib/precios.js).
     // Se replica aquí para que el total del checkout coincida con el que se cobra.
     subtotal: (s) =>
@@ -124,7 +151,11 @@ export const useCartStore = defineStore('cart', {
       const item = this.items.find((i) => i.productId === productId)
       if (!item) return
       const minQ = Number(item.minQuantity) || 1
-      const step = Number(item.stepQuantity) || 1
+      // El ajuste va en la unidad en la que se vende. Con un producto por
+      // empaque, ajustar al paso en gramos dejaba cantidades que no eran
+      // ninguna caja entera: 1270 g se convertían en 1260 porque 1260 es
+      // múltiplo de 30 y 1270 no. El servidor valida el paso real igual.
+      const step = saltoDe(item)
       if (quantity < minQ - 1e-9) quantity = minQ
       if (quantity <= 0) {
         this.remove(productId)
@@ -144,15 +175,13 @@ export const useCartStore = defineStore('cart', {
     increment(productId) {
       const item = this.items.find((i) => i.productId === productId)
       if (!item) return
-      const step = Number(item.stepQuantity) || 1
-      this.setQuantity(productId, Math.round((item.quantity + step) * 100) / 100)
+      this.setQuantity(productId, item.quantity + saltoDe(item))
     },
     decrement(productId) {
       const item = this.items.find((i) => i.productId === productId)
       if (!item) return
-      const step = Number(item.stepQuantity) || 1
       const minQ = Number(item.minQuantity) || 1
-      const next = Math.round((item.quantity - step) * 100) / 100
+      const next = Math.round((item.quantity - saltoDe(item)) * 100) / 100
       if (next < minQ - 1e-9) this.remove(productId)
       else this.setQuantity(productId, next)
     },

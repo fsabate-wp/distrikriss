@@ -9,6 +9,7 @@ import {
   subtotalDeLineas,
   unidadesDeVenta,
   precioPorUnidad,
+  pasoDeVenta,
   nombreUnidadVenta,
   pluralizar,
   descripcionCantidadVenta,
@@ -579,6 +580,91 @@ test('un carrito guardado antes del cambio se reconstruye', async () => {
   assert.equal(cart.items[0].price, 0.0025, 'convierte el precio antiguo al precio por gramo')
   assert.equal(cart.items[0].salePrice, 1, 'y conserva el precio de la bandeja para mostrarlo')
   assert.equal(cart.subtotal, 1, 'el total sale bien sin que el cliente vuelva a agregar el producto')
+})
+
+test('el boton + del carrito anade una caja entera, no el paso en gramos', async () => {
+  // El fallo que reporto el cliente: el "+ caja" sumaba 30 gramos porque usaba
+  // stepQuantity, y el icono de la cabecera marcaba 665.
+  const cart = await carritoNuevo()
+  const producto = {
+    id: 'p1', name: 'Uva roja', unit: 'Gramos', price: 2.45, discount: 0,
+    stock: -1, minQuantity: 635, stepQuantity: 30,
+  }
+  cart.add(producto)
+  assert.equal(cart.items[0].quantity, 635, 'arranca con una caja')
+
+  cart.increment('p1')
+  assert.equal(cart.items[0].quantity, 1270, 'dos cajas: 635 + 635, no 635 + 30')
+  cart.increment('p1')
+  assert.equal(cart.items[0].quantity, 1905, 'tres cajas')
+  cart.decrement('p1')
+  assert.equal(cart.items[0].quantity, 1270, 'y quitar devuelve a dos')
+
+  // El paso del producto puede ser pequeño; eso no cambia lo que se compra.
+  cart.decrement('p1')
+  assert.equal(cart.items[0].quantity, 635, 'vuelve a una caja')
+  cart.decrement('p1')
+  assert.equal(cart.items.length, 0, 'bajar de una caja quita la línea, no deja media caja')
+})
+
+test('un producto por unidad si sigue avanzando por su paso', async () => {
+  const cart = await carritoNuevo()
+  cart.add({ id: 'p1', name: 'Brócoli', unit: 'Unidad', price: 1, stock: -1, minQuantity: 1, stepQuantity: 1 })
+  cart.increment('p1')
+  assert.equal(cart.items[0].quantity, 2, 'con minimo 1 el paso manda')
+  // Medio kilo: el paso de 0.5 sigue siendo el que mueve el botón.
+  cart.add({ id: 'p2', name: 'Arroz', unit: 'Kilo', price: 2, stock: -1, minQuantity: 1, stepQuantity: 0.5 })
+  cart.increment('p2')
+  const arroz = cart.items.find((i) => i.productId === 'p2')
+  assert.equal(arroz.quantity, 1.5, 'en kilos avanza de medio en medio')
+})
+
+test('el paso de venta de un producto por empaque es el empaque', () => {
+  // El caso de la captura: caja de 635 g con un paso de 30 g heredado de una
+  // importación. Con el paso guardado, el servidor aceptaba 665 g.
+  assert.equal(pasoDeVenta(635, 30), 635, 'manda el empaque, no el paso guardado')
+  assert.equal(respetaPaso(635, pasoDeVenta(635, 30)), true, 'una caja')
+  assert.equal(respetaPaso(1270, pasoDeVenta(635, 30)), true, 'dos cajas')
+  assert.equal(respetaPaso(665, pasoDeVenta(635, 30)), false, '665 g no es ninguna caja')
+  assert.equal(respetaPaso(30, pasoDeVenta(635, 30)), false, 'ni 30 g')
+})
+
+test('un producto que se vende unidad a unidad conserva su paso', () => {
+  assert.equal(pasoDeVenta(1, 1), 1)
+  assert.equal(pasoDeVenta(1, 0.5), 0.5, 'medio kilo')
+  assert.equal(pasoDeVenta(null, 1), 1)
+  assert.equal(pasoDeVenta(1, 0), 1, 'un paso sin valor cae a 1')
+})
+
+test('cliente y servidor calculan el mismo paso de venta', () => {
+  // Si divergen, el "+ caja" suma una cosa y el servidor acepta otra.
+  const casos = [
+    [635, 30],
+    [400, 50],
+    [1, 1],
+    [1, 0.5],
+    [4, 1],
+    [null, 1],
+  ]
+  for (const [min, step] of casos) {
+    assert.equal(
+      fmt.pasoDeVenta(min, step),
+      pasoDeVenta(min, step),
+      `paso para min=${min} step=${step}`,
+    )
+  }
+})
+
+test('el icono del carrito cuenta cajas, no gramos', async () => {
+  const cart = await carritoNuevo()
+  // Bandeja de 400 g a $1: dos cajas son 2, no 800.
+  cart.add({ id: 'p1', name: 'Champiñones', unit: 'Gramos', price: 1, stock: -1, minQuantity: 400, stepQuantity: 400 }, 800)
+  assert.equal(cart.count, 800, 'la cuenta cruda sigue siendo el peso, para el servidor')
+  assert.equal(cart.unitCount, 2, 'pero lo que ve el cliente son 2 cajas')
+
+  // Un kilo de papa son 1 kilo, no 1000.
+  cart.add({ id: 'p2', name: 'Papa', unit: 'Kilo', price: 1, stock: -1, minQuantity: 1, stepQuantity: 1 }, 3)
+  assert.equal(cart.unitCount, 5, 'suma de cajas y kilos sueltos')
 })
 
 test('el carrito guarda el precio ya descontado, no el de lista', async () => {

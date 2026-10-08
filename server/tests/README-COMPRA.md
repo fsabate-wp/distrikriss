@@ -44,6 +44,32 @@ que se cobró.
 En pantalla nunca se muestra el precio por gramo, que aparecería como $0.00. Se
 anuncia el precio del empaque: "Por caja de plástico de 400 g".
 
+### Mínimo y paso de venta
+
+Un producto que se vende por empaque se vende en **empaques enteros**: 1, 2 o 3
+cajas. El paso real es el empaque, no el que guarde el catálogo.
+
+`pasoDeVenta(minQuantity, stepQuantity)` decide cuál de los dos manda, y lo usan
+**el servidor y el cliente** con la misma función:
+
+| Mínimo | Paso guardado | Paso real | Por qué |
+|---|---|---|---|
+| 400 | 400 | 400 | Caso normal |
+| 635 | 30 | **635** | El 30 viene de una importación antigua |
+| 1 | 0.5 | 0.5 | Se vende por peso, no por empaque |
+
+Sin esa regla, una caja de 635 g con paso de 30 g admitía 665 g: el `+ caja` del
+carrito sumaba 30 gramos y el icono de la cabecera marcaba 665.
+
+Consecuencias visibles en el cliente:
+
+- El `+` y el `−` mueven **un empaque entero**, y el `+` dice de qué.
+- El contador de la cabecera cuenta cajas, no gramos, y pasa a `20+`.
+- Bajar de un empaque quita la línea, en vez de dejar media caja.
+
+El servidor sigue validando el paso real, así que una petición propia con 665 g
+recibe `400 INVALID_STEP`.
+
 ### Stock
 
 El stock comparte unidad con la cantidad: los 400 g de una bandeja se comparan
@@ -270,7 +296,7 @@ su unidad de medida, sin inventar un empaque.
 ## Pruebas
 
 ```bash
-npm test                                  # 150 unitarias
+npm test                                  # 156 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 
@@ -292,3 +318,4 @@ unidades, y cincuenta códigos a la vez.
 un cliente no puede ver el comprobante de otro. Limpia al principio los datos
 que dejaron corridas interrumpidas: las zonas se resuelven por polígono y una
 zona vieja haría fallar el horario de la prueba.
+

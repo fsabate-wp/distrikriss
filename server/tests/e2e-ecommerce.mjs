@@ -408,7 +408,33 @@ await prisma.product.deleteMany({
   check(media.body?.code === 'INVALID_STEP', `con el codigo de paso de venta (${media.body?.code})`)
   check(/400 Gramos/.test(media.body?.error || ''), 'y el mensaje dice cuál es el paso')
 
-  // El precio del catálogo sigue siendo el de la bandeja en la respuesta.
+  // El paso guardado en el catálogo puede no ser el empaque (una importación
+  // vieja dejó 30 g en una caja de 635 g). El servidor manda: se vende en cajas
+  // enteras aunque el paso guardado diga otra cosa.
+  const conPasoChico = await prisma.product.update({
+    where: { id: bandeja.id },
+    data: { minQuantity: 635, stepQuantity: 30, price: 2.45 },
+  })
+  check(Number(conPasoChico.stepQuantity) === 30, 'el paso guardado es de 30 g a proposito')
+
+  const fraccion = await pedir([{ productId: bandeja.id, quantity: 665 }])
+  check(!fraccion.res.ok, `665 g no se puede pedir aunque el paso guardado sea de 30: HTTP ${fraccion.res.status}`)
+  check(fraccion.body?.code === 'INVALID_STEP', `el servidor impone la caja (${fraccion.body?.code})`)
+  check(/635 Gramos/.test(fraccion.body?.error || ''), 'y el mensaje dice que el paso son 635 g')
+
+  const dosCajas = await pedir([{ productId: bandeja.id, quantity: 1270 }])
+  check(dosCajas.res.ok, `dos cajas si se aceptan: ${dosCajas.res.status} ${dosCajas.body?.error || ''}`)
+  if (dosCajas.body?.order) {
+    check(Number(dosCajas.body.order.subtotal) === 4.9, `dos cajas de $2.45 son $4.90 (${dosCajas.body.order.subtotal})`)
+    await prisma.order.delete({ where: { id: dosCajas.body.order.id } })
+  }
+
+  // Se restaura para que las comprobaciones del catalogo que vienen abajo
+  // sigan viendo el producto original ($1 la caja de 400 g).
+  await prisma.product.update({
+    where: { id: bandeja.id },
+    data: { minQuantity: 400, stepQuantity: 400, price: 1 },
+  })
   r = await fetch(`${BASE}/api/catalog/products?search=Champinones`)
   const catalogo = await r.json()
   const enCatalogo = catalogo.products.find((p) => p.id === bandeja.id)

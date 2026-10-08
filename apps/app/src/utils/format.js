@@ -30,6 +30,21 @@ export function precioPorUnidad(precio, minQuantity) {
 }
 
 /**
+ * Paso de venta real de un producto.
+ *
+ * Copia literal de server/src/lib/precios.js. Cuando el producto se vende por
+ * empaque, el paso es el empaque y no el que quedó en el catálogo: si el paso
+ * guardado fuese de 30 g, el "+ caja" sumaría 30 gramos y el servidor aceptaría
+ * 665 g de una caja de 635 g.
+ */
+export function pasoDeVenta(minQuantity, stepQuantity) {
+  const min = Number(minQuantity)
+  if (Number.isFinite(min) && min > 1) return min
+  const step = Number(stepQuantity)
+  return Number.isFinite(step) && step > 0 ? step : 1
+}
+
+/**
  * Cómo se llama la unidad en la que realmente se vende un producto.
  *
  * El tendero compra y vende cajas, fundas y bandejas; los gramos solo sirven

@@ -22,6 +22,23 @@ export function precioConDescuento(precio, descuento) {
   return round2(Number(precio || 0) * (1 - pct / 100))
 }
 
+/**
+ * Paso de venta real de un producto.
+ *
+ * Cuando el producto se vende por empaque, el paso ES el empaque: 1, 2 o 3
+ * cajas, nunca un múltiplo de 30 gramos que haya quedado en el catálogo de
+ * una importación antigua. Sin esto el servidor aceptaba 665 g de una caja de
+ * 635 g, que es justo la fracción que el tendero no vende.
+ *
+ * Para lo que se vende unidad a unidad manda el paso configurado.
+ */
+export function pasoDeVenta(minQuantity, stepQuantity) {
+  const min = Number(minQuantity)
+  if (Number.isFinite(min) && min > 1) return min
+  const step = Number(stepQuantity)
+  return Number.isFinite(step) && step > 0 ? step : 1
+}
+
 /** Descuento acotado a un porcentaje utilizable. */
 export function descuentoValido(descuento) {
   return Math.min(Math.max(Number(descuento) || 0, 0), 100)

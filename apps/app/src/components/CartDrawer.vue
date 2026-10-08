@@ -41,9 +41,21 @@
                 <small v-if="cantidadDe(item).detalle">{{ cantidadDe(item).detalle }}</small>
               </p>
               <div class="qty-control">
-                <button @click="cart.decrement(item.productId)" :aria-label="`Quitar una ${nombreDe(item)}`">−</button>
-                <button class="qty-add" @click="cart.increment(item.productId)" :aria-label="`Añadir una ${nombreDe(item)}`">
-                  + {{ nombreDe(item) }}
+                <button
+                  class="qty-step"
+                  :aria-label="`Quitar una ${nombreDe(item)}`"
+                  :title="`Quitar una ${nombreDe(item)}`"
+                  @click="cart.decrement(item.productId)"
+                >
+                  −
+                </button>
+                <button
+                  class="qty-step qty-add"
+                  :aria-label="`Añadir una ${nombreDe(item)}`"
+                  :title="`Añadir una ${nombreDe(item)}`"
+                  @click="cart.increment(item.productId)"
+                >
+                  <span aria-hidden="true">+</span> {{ nombreDe(item) }}
                 </button>
               </div>
             </div>
@@ -289,38 +301,61 @@ function goHome() {
 
 .qty-control {
   display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  background: white;
-  border-radius: 50px;
-  padding: 3px 8px;
-  border: 1px solid var(--gray-mid);
-}
-
-.qty-control button {
-  background: none;
-  border: none;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--green-dark);
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 8px;
 }
 
 /*
-  El botón de añadir dice QUÉ añade. "+" a secas no deja claro si suma un gramo
-  o una caja, y es justo la duda que hace que la gente no se atreva a tocarlo.
+  Los dos botones son de la MISMA altura y el signo va con el mismo tamaño: antes
+  el "+ caja" salía con tipografía más pequeña y el "+" se veía diminuto al lado
+  del "−", que parecía un botón y el otro una etiqueta.
+
+  El de quitar es cuadrado y el de añadir lleva texto, porque no basta con "+":
+  hay que decir QUÉ se añade, o nadie sabe si suma un gramo o una caja.
 */
+.qty-control button {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gray-mid);
+  background: var(--gray-light);
+  color: var(--green-dark);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.qty-control button:hover {
+  background: white;
+  border-color: var(--green-light);
+}
+
+.qty-control button:active {
+  background: var(--green-mid);
+  color: white;
+}
+
+.qty-control .qty-step {
+  width: 32px;
+  font-size: 1.1rem;
+  border-radius: 8px 0 0 8px;
+}
+
 .qty-control .qty-add {
-  width: auto;
-  padding: 0 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 0 12px;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 0 8px 8px 0;
+  border-left: none;
   white-space: nowrap;
+}
+
+.qty-control .qty-add span {
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 .cart-item-cant {
