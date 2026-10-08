@@ -425,3 +425,81 @@ test('el XML generado es parseable y esta bien formado', () => {
   const descripcion = doc.getElementsByTagName('descripcion')[0]
   assert.equal(descripcion.textContent, 'Papa & "especial" <grande>')
 })
+
+// ---------------------------------------------------------------------------
+// El comprobante fiscal habla en cajas.
+//
+// La cantidad del XML sigue siendo numérica y en la unidad de medida, porque el
+// SRI lo exige. La parte humana ("2 cajas") va en la descripción de la línea.
+// ---------------------------------------------------------------------------
+
+test('la descripción de la línea dice cuántas cajas se vendieron', () => {
+  const { lines } = buildLines(
+    pedido([
+      {
+        productId: 'p1',
+        name: 'Champiñones',
+        presentation: 'Caja de plástico',
+        unit: 'Gramos',
+        price: 0.0025,
+        listPrice: 0.0025,
+        quantity: 800,
+        ivaRate: 15,
+        unitQuantity: 400,
+        saleUnitName: 'caja',
+      },
+    ]),
+    settingsBase,
+  )
+  assert.match(lines[0].description, /2 cajas de 400 gramos/, lines[0].description)
+  // La cantidad del XML no cambia: sigue siendo el peso, que es lo que el SRI
+  // y el stock necesitan.
+  assert.equal(lines[0].quantity, 800)
+  assert.equal(lines[0].venta.principal, '2 cajas')
+  assert.equal(lines[0].venta.detalle, '800 gramos')
+})
+
+test('una linea sin empaque no menciona cajas', () => {
+  const { lines } = buildLines(
+    pedido([
+      { productId: 'p1', name: 'Papa', unit: 'Kilo', price: 2.5, listPrice: 2.5, quantity: 3, ivaRate: 15 },
+    ]),
+    settingsBase,
+  )
+  assert.equal(lines[0].description, 'Papa')
+  assert.equal(lines[0].venta.principal, '3 Kilo')
+})
+
+test('la descripción con cajas respeta el limite del SRI', () => {
+  const { lines } = buildLines(
+    pedido([
+      {
+        productId: 'p1',
+        name: 'x'.repeat(300),
+        presentation: 'y'.repeat(200),
+        unit: 'Gramos',
+        price: 0.0025,
+        listPrice: 0.0025,
+        quantity: 400,
+        ivaRate: 15,
+        unitQuantity: 400,
+        saleUnitName: 'caja',
+      },
+    ]),
+    settingsBase,
+  )
+  assert.ok(lines[0].description.length <= 300, `longitud=${lines[0].description.length}`)
+})
+
+test('la linea de entrega no inventa cajas', () => {
+  const { lines } = buildLines(
+    pedido([{ productId: 'p1', name: 'Papa', unit: 'Kilo', price: 2.5, listPrice: 2.5, quantity: 1, ivaRate: 15 }], {
+      deliveryFee: 2,
+    }),
+    settingsBase,
+  )
+  const entrega = lines.find((l) => l.code === 'SERVICIO-ENTREGA')
+  assert.ok(entrega, 'debe existir la linea del envio')
+  assert.equal(entrega.venta.principal, '1 entrega')
+  assert.equal(entrega.venta.detalle, '', 'el envio no lleva gramos ni cajas')
+})

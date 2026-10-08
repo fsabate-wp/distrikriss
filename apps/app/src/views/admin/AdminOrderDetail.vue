@@ -45,7 +45,13 @@
         <div class="admin-card">
           <h2>Productos</h2>
           <div v-for="item in order.items" :key="item.id" class="item-row">
-            <span>{{ item.name }} <small class="muted">× {{ item.quantity }} ({{ item.unit }})</small></span>
+            <span>
+          {{ item.name }}
+          <small class="muted">
+            × {{ cantidadDe(item).principal }}
+            <span v-if="cantidadDe(item).detalle">({{ cantidadDe(item).detalle }})</span>
+          </small>
+        </span>
             <span>{{ money(item.price * item.quantity) }}</span>
           </div>
           <div class="totals">
@@ -115,7 +121,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client.js'
-import { money, formatDateTime, formatDateLong, STATUS_LABELS, INVOICE_STATUS_LABELS } from '../../utils/format.js'
+import { money, formatDateTime, formatDateLong, STATUS_LABELS, INVOICE_STATUS_LABELS, descripcionCantidadVenta } from '../../utils/format.js'
 
 const route = useRoute()
 const order = ref(null)
@@ -125,6 +131,16 @@ const paymentPaid = ref(false)
 const retrying = ref(false)
 
 const isFinalInvoice = computed(() => order.value?.invoice?.status === 'AUTHORIZED')
+
+/** "2 cajas (800 g)", leído del snapshot de la línea, no del catálogo actual. */
+function cantidadDe(item) {
+  return descripcionCantidadVenta({
+    quantity: item.quantity,
+    unitQuantity: item.unitQuantity,
+    saleUnitName: item.saleUnitName,
+    unit: item.unit,
+  })
+}
 
 const statusOrder = ['PENDING', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
 

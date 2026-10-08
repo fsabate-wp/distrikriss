@@ -5,12 +5,11 @@
  * existía: que el cliente descarga su propia RIDE, que no puede ver la de otro
  * y que la búsqueda encuentra lo que se escribe en Ecuador.
  */
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '../src/lib/prisma.js'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
 
-const prisma = new PrismaClient()
 const BASE = 'http://127.0.0.1:4123'
 let ok = 0
 let fail = 0

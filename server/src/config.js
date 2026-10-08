@@ -1,5 +1,7 @@
-import 'dotenv/config'
 import crypto from 'node:crypto'
+import { cargarEnv } from './lib/env.js'
+
+cargarEnv()
 
 const DEFAULTS = {
   port: 4000,

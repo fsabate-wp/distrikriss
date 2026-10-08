@@ -165,6 +165,13 @@ model OrderItem {
   discountPct  Int      @default(0)
   // Precio de lista antes del descuento. Sirve para reconstruir y auditar la linea.
   listPrice    Decimal? @db.Decimal(16, 6)
+  // Tamaño del empaque en el momento de la compra: los 400 g de una caja.
+  // Se guarda aparte de minQuantity porque el tendero puede cambiar el tamaño de
+  // la caja después, y el comprobante ya emitido debe seguir diciendo "caja de
+  // 400 g" aunque ahora la caja sea de 500.
+  unitQuantity Decimal? @db.Decimal(10, 2)
+  // Cómo llamaba el tendero al empaque: "caja", "funda", "bandeja".
+  saleUnitName String?
   sriCode      String?
 }
 

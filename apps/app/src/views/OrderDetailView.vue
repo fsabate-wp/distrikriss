@@ -23,7 +23,18 @@
           <div class="detail-card">
             <h2>Productos</h2>
             <div v-for="item in order.items" :key="item.id" class="item-row">
-              <span>{{ item.name }} <small class="muted">× {{ formatQty(item.quantity) }} {{ item.unit }}<span v-if="item.presentation"> · {{ item.presentation }}</span></small></span>
+              <span>
+                {{ item.name }}
+                <!--
+                  Lo que se compró son cajas, no gramos. Se lee del snapshot de
+                  la línea, así que sigue diciendo la caja de 400 g aunque ahora
+                  el tendero venda cajas de 500.
+                -->
+                <small class="muted">
+                  × {{ cantidadDe(item).principal }}
+                  <span v-if="cantidadDe(item).detalle">({{ cantidadDe(item).detalle }})</span>
+                </small>
+              </span>
               <span>{{ money(item.price * item.quantity) }}</span>
             </div>
             <div class="totals">
@@ -126,11 +137,27 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money, formatDateLong, formatDateTime, STATUS_LABELS, PAYMENT_LABELS } from '../utils/format.js'
+import { money, formatDateLong, formatDateTime, STATUS_LABELS, PAYMENT_LABELS, descripcionCantidadVenta } from '../utils/format.js'
 
 function formatQty(v) {
   const n = Number(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+/**
+ * Cómo se lee la cantidad de una línea del pedido.
+ *
+ * Usa el snapshot (`unitQuantity` y `saleUnitName`) que el servidor guardó al
+ * confirmar, no el catálogo actual: el comprobante ya emitido no puede cambiar
+ * porque el tendero agrande la caja.
+ */
+function cantidadDe(item) {
+  return descripcionCantidadVenta({
+    quantity: item.quantity,
+    unitQuantity: item.unitQuantity,
+    saleUnitName: item.saleUnitName,
+    unit: item.unit,
+  })
 }
 
 const route = useRoute()

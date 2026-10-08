@@ -88,6 +88,35 @@ export function descripcionCantidad({ quantity, minQuantity, presentation, unit 
   return { principal, detalle }
 }
 
+/**
+ * Cómo se lee una cantidad en un pedido ya confirmado.
+ *
+ * Copia literal de `descripcionCantidadVenta` en server/src/lib/precios.js. Si
+ * divergen, el carrito dice "caja" y el comprobante "bandeja" por el mismo
+ * producto, que es justo la confusión que se quiere evitar.
+ *
+ * Se lee del snapshot de la línea (`unitQuantity`), no del catálogo: un
+ * comprobante ya emitido no puede cambiar porque el tendero agrande la caja.
+ */
+export function descripcionCantidadVenta({ quantity, unitQuantity, saleUnitName, unit }) {
+  const n = Number(quantity) || 0
+  const tamano = Number(unitQuantity) || 0
+
+  if (tamano <= 1) return { principal: `${cantidadCorta(n)} ${unit || 'unidad'}`, detalle: '' }
+
+  const piezas = Math.round((n / tamano) * 100) / 100
+  const nombre = saleUnitName || 'unidad'
+  return {
+    principal: `${cantidadCorta(piezas)} ${pluralizar(nombre, piezas)}`,
+    detalle: `${cantidadCorta(n)} ${String(unit || '').toLowerCase()}`,
+  }
+}
+
+function cantidadCorta(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function formatQtyCorto(v) {
   const n = Number(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')

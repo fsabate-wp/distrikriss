@@ -216,7 +216,7 @@ export async function renderRide({ invoice, order, settings, lines, totals, grou
   const cols = { desc: PAGE_MARGIN, qty: 360, price: 415, discount: 465, base: PAGE_MARGIN }
   doc.font('Helvetica-Bold').fontSize(7).fillColor(BLUE)
   doc.text('DESCRIPCIÓN', cols.desc, y, { width: 280 })
-  doc.text('CANT.', cols.qty, y, { width: 45, align: 'right' })
+  doc.text('CANT.', cols.qty, y, { width: 60, align: 'right' })
   doc.text('PRECIO UNIT.', cols.price, y, { width: 50, align: 'right' })
   doc.text('DESC.', cols.discount, y, { width: 40, align: 'right' })
   doc.text('TOTAL SIN IMP.', 505, y, { width: 50, align: 'right' })
@@ -230,7 +230,13 @@ export async function renderRide({ invoice, order, settings, lines, totals, grou
     }
     doc.font('Helvetica').fontSize(7.5).fillColor('#000000')
     doc.text(txt(line.description), cols.desc, y, { width: 285 })
-    doc.text(qty(line.quantity), cols.qty, y, { width: 45, align: 'right' })
+    // "2 cajas" con los 800 gramos debajo. El gramo es referencial: lo que se
+    // vendió fueron dos cajas, y quien lee el comprobante necesita verlo así.
+    const venta = line.venta
+    doc.text(venta?.principal ? txt(venta.principal) : qty(line.quantity), cols.qty - 15, y, {
+      width: 60,
+      align: 'right',
+    })
     doc.text(Number(line.unitPrice).toFixed(6).replace(/0+$/, '').replace(/\.$/, ''), cols.price, y, {
       width: 50,
       align: 'right',
@@ -238,6 +244,11 @@ export async function renderRide({ invoice, order, settings, lines, totals, grou
     doc.text(money(line.discount), cols.discount, y, { width: 40, align: 'right' })
     doc.text(money(line.base), 505, y, { width: 50, align: 'right' })
     y += 12
+    if (venta?.detalle) {
+      doc.font('Helvetica').fontSize(6.5).fillColor(GREY)
+      doc.text(venta.detalle, cols.qty - 15, y, { width: 60, align: 'right' })
+      y += 9
+    }
     if (line.taxRate !== undefined) {
       doc
         .font('Helvetica')

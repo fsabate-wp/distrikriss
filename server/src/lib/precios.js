@@ -86,6 +86,81 @@ export function respetaPaso(cantidad, step) {
   return Math.abs(pasos - entero) <= 1e-6
 }
 
+/**
+ * Cómo se llama la unidad en la que realmente se vende un producto.
+ *
+ * El tendero compra y vende cajas, fundas y bandejas; los gramos solo sirven
+ * para pesar. La presentación del catálogo ("Caja de plástico", "Funda
+ * poliester") dice cuál es, así que se usa su primera palabra en vez de
+ * inventar un nombre.
+ *
+ * El cliente tiene su copia en apps/app/src/utils/format.js, porque necesita
+ * mostrarla en el carrito. Si divergen, el carrito dice "caja" y el comprobante
+ * dice "bandeja" por el mismo producto.
+ */
+export function nombreUnidadVenta(presentation, unit) {
+  const p = String(presentation || '').trim()
+  if (p) return p.split(/[\s-]+/)[0].toLowerCase()
+  const u = String(unit || '').toLowerCase()
+  if (['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)) return 'bandeja'
+  return 'unidad'
+}
+
+/**
+ * Plural español sencillo.
+ *
+ * Alcanza para "caja" -> "cajas" y "unidad" -> "unidades". No cubre el resto de
+ * la lengua, y no hace falta: los empaques tienen nombre propio en la
+ * presentación del catálogo.
+ */
+export function pluralizar(palabra, n) {
+  if (Math.abs(Number(n) - 1) < 1e-9) return palabra
+  if (/(z|d)$/i.test(palabra)) return `${palabra}es`
+  return `${palabra}s`
+}
+
+/**
+ * Cómo se lee una cantidad en un comprobante: primero los empaques, con los
+ * gramos como dato referencial.
+ *
+ * "2 cajas (800 g)" y no "800 Gramos", porque lo que el cliente compró son dos
+ * cajas. Y se lee del snapshot de la línea (`unitQuantity`), no del producto
+ * actual: un comprobante autorizado no puede cambiar si después agrandaron la
+ * caja.
+ */
+export function descripcionCantidadVenta({ quantity, unitQuantity, saleUnitName, unit }) {
+  const n = Number(quantity) || 0
+  const tamano = Number(unitQuantity) || 0
+
+  if (tamano <= 1) return { principal: `${cantidadCorta(n)} ${unit || 'unidad'}`, detalle: '' }
+
+  const piezas = Math.round((n / tamano) * 100) / 100
+  const nombre = saleUnitName || 'unidad'
+  return {
+    principal: `${cantidadCorta(piezas)} ${pluralizar(nombre, piezas)}`,
+    detalle: `${cantidadCorta(n)} ${String(unit || '').toLowerCase()}`,
+  }
+}
+
+/**
+ * Cómo se declara la cantidad en el comprobante fiscal.
+ *
+ * Para el SRI la cantidad tiene que ser numérica y en la unidad de medida: 800.
+ * La parte humana va en la descripción de la línea, que es donde el SRI permite
+ * texto libre y donde el lector la va a encontrar.
+ */
+export function anexoUnidadVenta({ quantity, unitQuantity, saleUnitName, unit }) {
+  const tamano = Number(unitQuantity) || 0
+  if (tamano <= 1) return ''
+  const d = descripcionCantidadVenta({ quantity, unitQuantity, saleUnitName, unit })
+  return `(${d.principal} de ${cantidadCorta(tamano)} ${String(unit || '').toLowerCase()})`
+}
+
+function cantidadCorta(v) {
+  const n = Number(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
 /** Cantidad máxima por línea: evita pedidos absurdos o de abuso. */
 export const MAX_CANTIDAD_LINEA = 5000
 

@@ -33,6 +33,7 @@ const {
   round2,
   precioConDescuento,
   precioPorUnidad,
+  nombreUnidadVenta,
   descuentoValido,
   respetaPaso,
   MAX_CANTIDAD_LINEA,
@@ -161,7 +162,15 @@ function withTotals(order) {
     subtotal: toNumber(order.subtotal),
     deliveryFee: toNumber(order.deliveryFee),
     total: toNumber(order.total),
-    items: order.items?.map((i) => ({ ...i, price: toNumber(i.price), quantity: toNumber(i.quantity), ivaRate: i.ivaRate != null ? toNumber(i.ivaRate) : null })),
+    // unitQuantity y saleUnitName llegan tal cual: el cliente los usa para leer
+    // "2 cajas" sin volver a consultar el catálogo, que ya pudo haber cambiado.
+    items: order.items?.map((i) => ({
+      ...i,
+      price: toNumber(i.price),
+      quantity: toNumber(i.quantity),
+      ivaRate: i.ivaRate != null ? toNumber(i.ivaRate) : null,
+      unitQuantity: i.unitQuantity != null ? toNumber(i.unitQuantity) : null,
+    })),
   }
 }
 
@@ -332,6 +341,11 @@ router.post('/', limits.checkout, async (req, res, next) => {
         discountPct: pct,
         listPrice: listUnit,
         sriCode: product.sriCode || null,
+        // Tamaño del empaque y cómo lo llama el tendero. Se congelan aquí: el
+        // comprobante tiene que decir "caja de 400 g" aunque después el tendero
+        // agrande la caja a 500 g.
+        unitQuantity: minQ > 1 ? minQ : null,
+        saleUnitName: minQ > 1 ? nombreUnidadVenta(product.presentation, product.unit) : null,
       })
     }
 

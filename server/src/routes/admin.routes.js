@@ -158,7 +158,14 @@ function withTotals(order) {
     subtotal: toNumber(order.subtotal),
     deliveryFee: toNumber(order.deliveryFee),
     total: toNumber(order.total),
-    items: order.items?.map((i) => ({ ...i, price: toNumber(i.price) })),
+    // El tamaño de la caja viaja como numero para que el panel lo pueda formatear
+    // junto al resto, sin recalcularlo desde el catálogo actual.
+    items: order.items?.map((i) => ({
+      ...i,
+      price: toNumber(i.price),
+      quantity: toNumber(i.quantity),
+      unitQuantity: i.unitQuantity != null ? toNumber(i.unitQuantity) : null,
+    })),
   }
 }
 

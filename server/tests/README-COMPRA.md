@@ -236,15 +236,41 @@ datos bancarios: el panel pedirá reintroducirlos.
 | `listPrice` | Precio de lista por unidad, para calcular el descuento |
 | `discountPct` | Descuento aplicado |
 | `ivaRate` | Tarifa de IVA en el momento de la venta |
+| `unitQuantity` | Tamaño del empaque en ese momento (los 400 g de una caja) |
+| `saleUnitName` | Cómo lo llamaba el tendero: "caja", "funda", "bandeja" |
 
 La factura deriva el descuento de `listPrice - price`, así que el total fiscal no
 puede descuadrar del comercial. Antes se guardaba solo `price` y el XML
 declaraba descuento cero.
 
+## El comprobante se lee en cajas
+
+Lo que el cliente compró son cajas, no gramos. "800 Gramos" en un comprobante es
+lo mismo que "2 cajas", pero suena a 800 piezas sueltas.
+
+`unitQuantity` y `saleUnitName` se congelan en la línea del pedido porque el
+tendero puede agrandar la caja después. Un comprobante ya autorizado tiene que
+seguir diciendo "caja de 400 g" aunque ahora la caja sea de 500 g: los dos datos
+quedan guardados en la línea que lo generó.
+
+| Site | Cómo se lee |
+|---|---|
+| Detalle del pedido (cliente) | "2 cajas (800 g)" |
+| Detalle del pedido (panel) | "2 cajas (800 g)" |
+| RIDE en PDF | Columna CANT. en "2 cajas", con "800 g" debajo |
+| XML del SRI | `cantidad` numérica 800; la descripción dice "(2 cajas de 400 gramos)" |
+
+La cantidad del XML **no** cambia: para el SRI tiene que ser numérica y en la
+unidad de medida, que es lo que usan el stock y la auditoría. La parte humana va
+en la descripción, que es donde el SRI permite texto.
+
+Las líneas creadas antes de esta columna no tienen el dato y siguen saliendo en
+su unidad de medida, sin inventar un empaque.
+
 ## Pruebas
 
 ```bash
-npm test                                  # 133 unitarias
+npm test                                  # 150 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 

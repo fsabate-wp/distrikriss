@@ -77,6 +77,11 @@ en lenguaje llano (`invoiceMessageFor` en `lib/sri/labels.js`).
 
 `GET /api/admin/invoices/:id/ride` sigue existiendo para el panel.
 
+La columna de cantidad de la RIDE se lee en cajas ("2 cajas") con los gramos
+debajo ("800 g"), porque lo que se vendió fueron dos cajas. El tamaño sale del
+snapshot de la línea del pedido, no del catálogo: el comprobante no cambia si
+después agrandan la caja.
+
 El dato de autorización vive en `Invoice.authorizationProof` (el campo
 `comprobante` que devuelve el SRI). Es lo que se persiste en la RIDE.
 
@@ -158,7 +163,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 133 pruebas unitarias
+npm test                              # 150 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```
@@ -168,3 +173,4 @@ docker-compose.dev.yml up -d`) y las migraciones aplicadas.
 
 `e2e-ecommerce.mjs` cubre las rutas del cliente: aislamiento entre usuarios en
 la RIDE, los tres estados del comprobante y la descarga del PDF.
+

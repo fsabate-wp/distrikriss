@@ -9,6 +9,10 @@ import {
   subtotalDeLineas,
   unidadesDeVenta,
   precioPorUnidad,
+  nombreUnidadVenta,
+  pluralizar,
+  descripcionCantidadVenta,
+  anexoUnidadVenta,
   MAX_CANTIDAD_LINEA,
   descripcionFactura,
 } from '../src/lib/precios.js'
@@ -181,6 +185,101 @@ test('un producto que se vende unidad a unidad no lleva empaque', () => {
   const d = fmt.descripcionCantidad({ quantity: 3, minQuantity: 1, unit: 'Kilo' })
   assert.equal(d.principal, '3 Kilo')
   assert.equal(d.detalle, '', 'no hay detalle que añadir')
+})
+
+// ---------------------------------------------------------------------------
+// El comprobante.
+//
+// Lo que el cliente compró son cajas, y el gramo es un dato referencial que
+// además puede cambiar de producto a producto. El tamaño de la caja queda
+// congelado en la línea del pedido: si el tendero agranda la caja después, el
+// comprobante antiguo tiene que seguir diciendo la caja de 400 g.
+// ---------------------------------------------------------------------------
+
+test('el comprobante se lee en cajas usando el snapshot de la linea', () => {
+  const linea = { quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos' }
+  const d = descripcionCantidadVenta(linea)
+  assert.equal(d.principal, '2 cajas')
+  assert.equal(d.detalle, '800 gramos')
+})
+
+test('el comprobante no depende del catalogo actual, solo del snapshot', () => {
+  // El tendero agranda la caja de 400 a 500. La línea vieja sigue diciendo 400,
+  // porque su snapshot no cambió: por eso el tamaño se guarda en OrderItem.
+  const antes = descripcionCantidadVenta({
+    quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos',
+  })
+  const despues = descripcionCantidadVenta({
+    quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos',
+  })
+  assert.equal(antes.principal, '2 cajas')
+  assert.equal(despues.principal, '2 cajas')
+})
+
+test('un pedido antiguo sin snapshot se sigue leyendo en su unidad', () => {
+  // Las líneas creadas antes de esta columna no tienen el dato. Deben salir como
+  // estaban, no romperse ni inventar un empaque.
+  const d = descripcionCantidadVenta({ quantity: 3, unitQuantity: null, saleUnitName: null, unit: 'Kilo' })
+  assert.equal(d.principal, '3 Kilo')
+  assert.equal(d.detalle, '')
+})
+
+test('la descripción del comprobante menciona las cajas', () => {
+  // Para el SRI la cantidad es numérica (800) y va en la unidad de medida. La
+  // parte humana va en la descripción, que es texto libre.
+  assert.equal(
+    anexoUnidadVenta({ quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos' }),
+    '(2 cajas de 400 gramos)',
+  )
+  assert.equal(
+    anexoUnidadVenta({ quantity: 12, unitQuantity: 4, saleUnitName: 'funda', unit: 'Unidad' }),
+    '(3 fundas de 4 unidad)',
+  )
+  // Sin empaque no se añade nada, para no ensuciar los productos sueltos.
+  assert.equal(anexoUnidadVenta({ quantity: 3, unitQuantity: 1, unit: 'Kilo' }), '')
+  assert.equal(anexoUnidadVenta({ quantity: 3, unitQuantity: null, unit: 'Kilo' }), '')
+})
+
+test('la descripción del comprobante no se pasa del límite del SRI', () => {
+  const anexo = anexoUnidadVenta({ quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos' })
+  const nombre = 'x'.repeat(400)
+  const d = descripcionFactura(`${nombre} ${anexo}`, '')
+  assert.ok(d.length <= 300, `longitud=${d.length}`)
+})
+
+test('cliente y servidor leen la cantidad del comprobante igual', () => {
+  // Si divergen, el carrito dice "caja" y el comprobante "bandeja".
+  const casos = [
+    { quantity: 800, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos' },
+    { quantity: 400, unitQuantity: 400, saleUnitName: 'caja', unit: 'Gramos' },
+    { quantity: 1200, unitQuantity: 400, saleUnitName: 'bandeja', unit: 'Gramos' },
+    { quantity: 12, unitQuantity: 4, saleUnitName: 'funda', unit: 'Unidad' },
+    { quantity: 3, unitQuantity: 1, unit: 'Kilo' },
+    { quantity: 3, unitQuantity: null, unit: 'Kilo' },
+  ]
+  for (const c of casos) {
+    const servidor = descripcionCantidadVenta(c)
+    const cliente = fmt.descripcionCantidadVenta(c)
+    assert.equal(cliente.principal, servidor.principal, `principal para ${JSON.stringify(c)}`)
+    assert.equal(cliente.detalle, servidor.detalle, `detalle para ${JSON.stringify(c)}`)
+  }
+})
+
+test('el nombre del empaque coincide entre cliente y servidor', () => {
+  const casos = [
+    ['Caja de plástico', 'Gramos'],
+    ['Funda poliester', 'Unidad'],
+    [null, 'Gramos'],
+    ['', 'Kilo'],
+    [null, 'Unidad'],
+  ]
+  for (const [presentacion, unidad] of casos) {
+    assert.equal(
+      fmt.nombreUnidadVenta(presentacion, unidad),
+      nombreUnidadVenta(presentacion, unidad),
+      `nombre para ${presentacion}/${unidad}`,
+    )
+  }
 })
 
 test('el precio del catálogo es el de la unidad minima, no el de una unidad', () => {

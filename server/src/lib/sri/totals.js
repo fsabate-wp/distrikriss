@@ -1,5 +1,5 @@
 import { taxFor, isValidIvaRate, round2 } from './xml.js'
-import { descripcionFactura } from '../precios.js'
+import { descripcionFactura, descripcionCantidadVenta, anexoUnidadVenta } from '../precios.js'
 
 /**
  * Calculo fiscal del comprobante: precios, descuentos, bases imponibles y
@@ -59,13 +59,24 @@ export function buildLines(order, settings) {
     totalDiscount = round2(totalDiscount + discount)
 
     const base = round2(chargedTotal / (1 + rate / 100))
+    // La cantidad del XML es numérica y va en la unidad de medida: 800. La
+    // parte humana ("2 cajas") va en la descripción, que es donde el SRI
+    // permite texto, y de donde el lector la saca. Se lee del snapshot de la
+    // línea, no del producto actual.
+    const anexo = anexoUnidadVenta(item)
+    const descripcion = descripcionFactura(
+      anexo ? `${item.name}${item.presentation ? ` - ${item.presentation}` : ''} ${anexo}` : item.name,
+      item.presentation && !anexo ? item.presentation : '',
+    )
     lines.push({
       code: item.productId || item.name,
       sriCode: item.sriCode || null,
       // La descripción se recorta al límite del SRI: sin esto, un producto con
       // nombre y presentación largos produce un XML que el SRI rechaza.
-      description: descripcionFactura(item.name, item.presentation),
+      description: descripcion,
       quantity,
+      // Cómo se lee la cantidad en la RIDE: "2 cajas" con "800 g" de apoyo.
+      venta: descripcionCantidadVenta(item),
       // Sin redondear a 2 decimales: son los que hacen que cantidad x precio
       // unitario cuadre con la base cuando la cantidad es fraccionaria.
       unitPrice: base / quantity,
@@ -86,6 +97,7 @@ export function buildLines(order, settings) {
       sriCode: null,
       description: DELIVERY_LINE_DESCRIPTION,
       quantity: 1,
+      venta: { principal: '1 entrega', detalle: '' },
       unitPrice: base,
       base,
       taxRate: rate,

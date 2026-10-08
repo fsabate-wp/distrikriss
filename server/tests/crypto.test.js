@@ -112,8 +112,13 @@ test('sin SRI_CERT_SECRET el cifrado falla con instrucciones, no en silencio', a
     JWT_SECRET: 'a'.repeat(64),
     JWT_REFRESH_SECRET: 'b'.repeat(64),
     ADMIN_PASSWORD: 'clave-admin-real-2026',
+    // Se apunta a un .env vacío a propósito: quitar la variable del entorno no
+    // basta, porque el proceso hijo cargaría server/.env y volvería a
+    // encontrarla. La prueba quiere comprobar qué pasa si de verdad no está.
+    ENV_FILE: path.join(os.tmpdir(), `env-vacio-${Date.now()}.env`),
   }
   delete env.SRI_CERT_SECRET
+  fs.writeFileSync(env.ENV_FILE, '')
   try {
     const salida = execFileSync(process.execPath, [archivo], { env, encoding: 'utf8' })
     assert.notEqual(salida.trim(), 'NO_FALLO', 'en produccion no se debe cifrar sin la clave')
@@ -121,6 +126,7 @@ test('sin SRI_CERT_SECRET el cifrado falla con instrucciones, no en silencio', a
     assert.match(salida, /openssl rand -hex 32/)
   } finally {
     fs.rmSync(archivo, { force: true })
+    fs.rmSync(env.ENV_FILE, { force: true })
   }
 })
 
