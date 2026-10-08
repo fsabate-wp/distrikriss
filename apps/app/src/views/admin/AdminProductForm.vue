@@ -66,8 +66,25 @@
         </div>
         <div class="form-group">
           <label>Stock</label>
-          <input v-model.number="form.stock" type="number" class="form-control" />
-          <small class="muted">-1 = sin límite</small>
+          <!--
+            Casilla de "sin límite" en vez de pedir que alguien escriba -1: el
+            valor negativo era la causa de que el botón "+" del catálogo no
+            funcionara, y depender de que cada quien recuerde el convenio es
+            frágil.
+          -->
+          <label class="check-inline">
+            <input v-model="stockSinLimite" type="checkbox" />
+            <span>Sin límite (no controlar existencias)</span>
+          </label>
+          <input
+            v-if="!stockSinLimite"
+            v-model.number="form.stock"
+            type="number"
+            min="0"
+            step="1"
+            class="form-control"
+          />
+          <small class="muted">Sin límite, el cliente siempre puede comprarlo.</small>
         </div>
         <div class="form-group">
           <label>Categoría</label>
@@ -147,6 +164,17 @@ const uploadError = ref('')
 const storeIva = ref(15)
 
 const storeIvaLabel = computed(() => `${storeIva.value}%`)
+
+/**
+ * Traduce el convenio interno (-1 = sin límite) a una casilla que nadie tiene
+ * que recordar. El valor numérico sigue yendo al servidor igual.
+ */
+const stockSinLimite = computed({
+  get: () => Number(form.value.stock) < 0,
+  set: (v) => {
+    form.value.stock = v ? -1 : 0
+  },
+})
 
 async function load() {
   try {

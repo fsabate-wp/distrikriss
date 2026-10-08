@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createPinia, setActivePinia } from 'pinia'
 import {
   round2,
   precioConDescuento,
@@ -9,6 +10,22 @@ import {
   MAX_CANTIDAD_LINEA,
   descripcionFactura,
 } from '../src/lib/precios.js'
+
+/**
+ * El carrito del navegador sobre `localStorage` falso, para probar las acciones
+ * del store en Node sin levantar un navegador.
+ */
+function montarCarrito() {
+  const guardado = new Map()
+  globalThis.localStorage = {
+    getItem: (k) => (guardado.has(k) ? guardado.get(k) : null),
+    setItem: (k, v) => guardado.set(k, v),
+    removeItem: (k) => guardado.delete(k),
+    clear: () => guardado.clear(),
+  }
+  setActivePinia(createPinia())
+  return guardado
+}
 
 /**
  * Copia literal de apps/app/src/utils/format.js. Si el cliente cambia la regla,
@@ -173,4 +190,80 @@ test('la descripcion no rompe los limites con producto ni presentacion raros', (
     const d = descripcionFactura(nombre, presentacion)
     assert.ok(d.length <= 300, `longitud=${d.length} para ${nombre.slice(0, 20)}`)
   }
+})
+
+// ---------------------------------------------------------------------------
+// El botón "+" de la tarjeta del catálogo.
+//
+// `Product.stock = -1` significa SIN LÍMITE, no "agotado". El store comprobaba
+// `stock <= 0` y rechazaba el producto de vuelta, así que, con el valor por
+// defecto del esquema y con la importación CSV que fija -1, casi ningún
+// producto se podía añadir desde la tarjeta: el clic no hacía nada y sin error
+// ni aviso. Estos tests fijan el comportamiento correcto.
+// ---------------------------------------------------------------------------
+
+async function carritoNuevo() {
+  montarCarrito()
+  const { useCartStore } = await import('../../apps/app/src/stores/cart.js')
+  return useCartStore()
+}
+
+test('el boton + funciona con stock ilimitado (stock = -1)', async () => {
+  const cart = await carritoNuevo()
+  const producto = { id: 'p1', name: 'Papa', unit: 'Gramos', price: 10, discount: 0, stock: -1, minQuantity: 400, stepQuantity: 400 }
+  assert.equal(cart.add(producto), true, 'un producto sin límite de stock se puede añadir')
+  assert.equal(cart.items.length, 1, 'queda en el carrito')
+  assert.equal(cart.items[0].quantity, 400, 'agrega el mínimo por defecto')
+})
+
+test('el stock -1 no se confunde con agotado', async () => {
+  const cart = await carritoNuevo()
+  // -1 es ilimitado; solo el 0 real significa que no hay.
+  assert.equal(cart.add({ id: 'p1', name: 'A', unit: 'Unidad', price: 1, stock: 0, minQuantity: 1 }), false)
+  assert.equal(cart.items.length, 0, 'stock 0 no entra al carrito')
+})
+
+test('con stock acotado no se puede superar el disponible', async () => {
+  const cart = await carritoNuevo()
+  const producto = { id: 'p1', name: 'Papa', unit: 'Gramos', price: 10, stock: 500, minQuantity: 100, stepQuantity: 50 }
+  assert.equal(cart.add(producto, 100), true)
+  // 100 + 500 = 600 > 500 disponibles.
+  assert.equal(cart.add(producto, 500), false, 'rechaza pasar del stock')
+  assert.equal(cart.items[0].quantity, 100, 'el carrito conserva lo que ya tenía')
+})
+
+test('a granel se compra por bandejas enteras, sin fracciones', async () => {
+  const cart = await carritoNuevo()
+  // Bandeja de 400 g: el paso es el mínimo, así que solo caben 400, 800, 1200.
+  const producto = { id: 'p1', name: 'Champiñones', unit: 'Gramos', price: 8, stock: -1, minQuantity: 400, stepQuantity: 400 }
+  assert.equal(cart.add(producto, 400), true, 'una bandeja')
+  assert.equal(cart.add(producto, 800), true, 'dos bandejas')
+  assert.equal(cart.items[0].quantity, 1200, 'acumula tres bandejas')
+  // 635 g no es medio kilo ni una bandeja: no se prepara.
+  assert.equal(respetaPaso(635, 400), false, 'el servidor rechaza 635 g con bandeja de 400')
+})
+
+test('una cantidad a granel invalida no se guarda', async () => {
+  const cart = await carritoNuevo()
+  const producto = { id: 'p1', name: 'Ajo', unit: 'Gramos', price: 8, stock: -1, minQuantity: 400, stepQuantity: 400 }
+  for (const mala of [0, -5, NaN]) {
+    assert.equal(cart.add(producto, mala), false, `rechaza ${mala}`)
+  }
+  assert.equal(cart.items.length, 0, 'nada entra al carrito')
+})
+
+test('setQuantity ajusta al paso hacia arriba, nunca por debajo de lo pedido', async () => {
+  const cart = await carritoNuevo()
+  cart.add({ id: 'p1', name: 'Espinaca', unit: 'Gramos', price: 6, stock: -1, minQuantity: 400, stepQuantity: 400 }, 400)
+  cart.setQuantity('p1', 635)
+  const q = cart.items[0].quantity
+  assert.ok(q % 400 === 0, `la cantidad final es múltiplo de la bandeja (${q})`)
+  assert.ok(q >= 635, `no queda por debajo de lo pedido (${q})`)
+  assert.equal(q, 800, '635 g se redondea a dos bandejas, nunca a una y media')
+})
+
+test('el carrito guarda el precio ya descontado, no el de lista', async () => {
+  const cart = await carritoNuevo()
+  cart.add({ id: 'p1', name: 'Arroz', unit: 'Kilo', price: 10, discount: 20, stock: -1, minQuantity: 1 }, 2)
+  assert.equal(cart.items[0].price, 8, 'guarda 10 con 20% de descuento = 8')
 })

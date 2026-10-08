@@ -11,13 +11,18 @@
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
+        <!--
+          A granel se vende por bandejas enteras. La tarjeta lo dice de forma
+          explícita para que nadie pida "635 g" esperando que se lo lleven: la
+          unidad de venta es la bandeja.
+        -->
         <p class="product-unit">
-          {{ product.unit }}
-          <span v-if="product.minQuantity && Number(product.minQuantity) !== 1"> · desde {{ formatQty(product.minQuantity) }} {{ unitLabel }}</span>
-          <span v-else-if="product.presentation"> · {{ product.presentation }}</span>
-          <span v-else-if="product.unit.toLowerCase() === 'kilo'"> · mínimo 1 Kilo</span>
+          <template v-if="isBulk">Por {{ bulkVenta }} de {{ formatQty(product.minQuantity) }} {{ unitLabel }}</template>
+          <template v-else>
+            {{ unitLabel }}<span v-if="product.presentation"> · {{ product.presentation }}</span>
+          </template>
         </p>
-        <p v-if="product.presentation" class="product-presentation">{{ product.presentation }}</p>
+        <p v-if="product.presentation && !isBulk" class="product-presentation">{{ product.presentation }}</p>
         <div class="product-price-row">
           <p class="product-price">{{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small></p>
           <p v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</p>
@@ -58,11 +63,24 @@ const lowStock = computed(() => {
   if (!Number.isFinite(s) || s <= 0) return 0
   return s <= 10 ? s : 0
 })
+/** A granel: el peso del empaque es el mínimo y se mide en gramos o kilos. */
+const isBulk = computed(() => {
+  const u = (props.product.unit || '').toLowerCase()
+  return ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)
+})
 const unitLabel = computed(() => {
   const u = (props.product.unit || '').toLowerCase()
-  if (u === 'kilo') return 'kg'
-  if (u === 'gramos') return 'g'
+  if (u === 'kilo' || u === 'kg' || u === 'kilogramo') return 'kg'
+  if (u === 'gramos' || u === 'g' || u === 'gramo') return 'g'
+  if (u === 'libra' || u === 'lb') return 'lb'
   return props.product.unit
+})
+/** Cómo llama la tienda al empaque: "caja de plástico", "funda", "bandeja". */
+const bulkVenta = computed(() => {
+  const p = (props.product.presentation || '').trim()
+  if (!p) return 'bandeja'
+  // En minúscula porque va dentro de una frase: "Por caja de plástico de…".
+  return p.charAt(0).toLowerCase() + p.slice(1)
 })
 function formatQty(v) {
   const n = Number(v)

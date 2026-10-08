@@ -65,7 +65,13 @@ export const useCartStore = defineStore('cart', {
     },
     add(product, quantity = null) {
       const stock = Number(product.stock)
-      if (Number.isFinite(stock) && stock <= 0) return false
+      // `stock = -1` significa SIN LÍMITE, no "agotado". La comprobación era
+      // `stock <= 0`, que descartaba de vuelta cualquier producto con stock
+      // ilimitado: como el esquema usa -1 por defecto y la importación CSV lo
+      // fija en -1, el botón "+" de la tarjeta no hacía nada y sin error ni
+      // aviso. Solo el cero real significa agotado.
+      const ilimitado = !Number.isFinite(stock) || stock < 0
+      if (!ilimitado && stock === 0) return false
       const minQ = Number(product.minQuantity) || 1
       const step = Number(product.stepQuantity) || 1
       const qty = quantity != null ? Number(quantity) : minQ
@@ -76,11 +82,11 @@ export const useCartStore = defineStore('cart', {
         const nueva = Math.round((existing.quantity + qty) * 100) / 100
         // El servidor rechaza pasar del stock disponible: avisar aquí evita
         // llegar al checkout para que falle.
-        if (Number.isFinite(stock) && stock >= 0 && nueva > stock) return false
+        if (!ilimitado && nueva > stock) return false
         existing.quantity = nueva
       } else {
         // Con stock acotado, no se puede añadir más de lo que queda.
-        if (Number.isFinite(stock) && stock >= 0 && qty > stock) return false
+        if (!ilimitado && qty > stock) return false
         this.items.push({
           productId: product.id,
           name: product.name,

@@ -68,14 +68,9 @@ function parseCSV(csvPath) {
 
     const presentation = presentRaw ? presentRaw.trim() : null
 
-    // step logic: Kilo -> 1, Gramos -> minQuantity, else 1
-    let stepQuantity = 1
-    const unitLower = unit.toLowerCase()
-    if (unitLower === 'gramos') stepQuantity = minQuantity
-    else if (unitLower === 'kilo') stepQuantity = 1
-    else if (unitLower === 'unidad') stepQuantity = 1
-    else if (unitLower === 'atado' || unitLower === 'paquete' || unitLower === 'pedazo') stepQuantity = 1
-    else stepQuantity = 1
+    // A granel el paso ES la bandeja: 1, 2 o 3 bandejas, nunca media bandeja.
+    // El mínimo del CSV es el peso de la bandeja.
+    const stepQuantity = minQuantity
 
     items.push({
       sku: sku ? String(sku) : null,

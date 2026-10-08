@@ -400,6 +400,19 @@ const productSchema = z.object({
   categoryId: z.string().optional().nullable(),
 })
 
+/**
+ * Paso de venta por defecto.
+ *
+ * En productos a granel el paso es la bandeja: se vende 1, 2 o 3 bandejas y
+ * nunca media bandeja, así que el paso coincide con el mínimo. En el resto de
+ * unidades es 1: una unidad, un atado, una cabeza.
+ */
+function pasoPorDefecto(unit, minQuantity) {
+  const u = String(unit || '').toLowerCase()
+  const esPeso = ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)
+  return esPeso ? minQuantity : 1
+}
+
 router.post('/products', async (req, res, next) => {
   try {
     const data = productSchema.parse(req.body)
@@ -422,7 +435,7 @@ router.post('/products', async (req, res, next) => {
         presentation: data.presentation || null,
         sku: data.sku || null,
         minQuantity: data.minQuantity ?? 1,
-        stepQuantity: data.stepQuantity ?? (data.unit?.toLowerCase() === 'gramos' ? (data.minQuantity ?? 1) : 1),
+        stepQuantity: data.stepQuantity ?? pasoPorDefecto(data.unit, data.minQuantity ?? 1),
         stock: data.stock ?? -1,
         imageUrl: data.imageUrl || null,
         active: data.active ?? true,
@@ -560,7 +573,7 @@ function parseCSVBuffer(buffer) {
     const presentation = presentRaw || null
     const sku = skuRaw || null
     const catName = categoriaRaw || currentCategory || 'General'
-    rows.push({ sku, name: nameRaw, unit, minQuantity, presentation, price, categoryName: catName })
+    rows.push({ sku, name: nameRaw, unit, minQuantity, stepQuantity: pasoPorDefecto(unit, minQuantity), presentation, price, categoryName: catName })
   }
   return { header, rows }
 }
@@ -602,11 +615,6 @@ router.post('/products/import', csvUpload.single('file'), async (req, res, next)
     for (const r of rows) {
       try {
         const slug = slugify(r.name)
-        let stepQuantity = 1
-        const ul = r.unit.toLowerCase()
-        if (ul === 'gramos') stepQuantity = r.minQuantity
-        else if (ul === 'kilo') stepQuantity = 1
-        else stepQuantity = 1
 
         const data = {
           name: r.name,
@@ -614,7 +622,7 @@ router.post('/products/import', csvUpload.single('file'), async (req, res, next)
           unit: r.unit,
           presentation: r.presentation,
           minQuantity: r.minQuantity,
-          stepQuantity,
+          stepQuantity: pasoPorDefecto(r.unit, r.minQuantity),
           price: r.price,
           categoryId: catMap[r.categoryName] || null,
           stock: -1,

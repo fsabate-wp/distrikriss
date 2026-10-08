@@ -16,7 +16,7 @@
           <p class="product-unit">
             Unidad: {{ product.unit }}
             <span v-if="product.presentation"> · {{ product.presentation }}</span>
-            <span v-if="product.minQuantity"> · Mínimo {{ formatQty(product.minQuantity) }} {{ product.unit }}</span>
+            <span v-if="product.minQuantity"> · Mínimo {{ formatQty(product.minQuantity) }} {{ unitLabel }}</span>
           </p>
           <p v-if="product.presentation" class="product-presentation">Empaque: {{ product.presentation }}</p>
           <p v-if="product.description" class="product-desc">{{ product.description }}</p>
@@ -25,22 +25,77 @@
             <span v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</span>
             <span v-if="product.discount && product.discount < 100" class="product-discount">{{ product.discount }}%</span>
           </p>
-          <p class="muted" style="margin-bottom:12px;font-size:0.85rem">
-            Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ product.unit }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }}</span>
+          <p class="muted price-detail">
+            <template v-if="esAGranel">
+              Precio por {{ unitLabel }} · se vende por {{ pluralPresentacion }} de {{ formatQty(minQty) }} {{ unitLabel }}
+            </template>
+            <template v-else>
+              Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ unitLabel }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }} {{ unitLabel }}</span>
+            </template>
           </p>
 
           <p v-if="isOutOfStock" class="error-msg" style="margin-bottom:12px;font-weight:700">Producto sin stock — no disponible para agregar al carrito</p>
 
           <div class="purchase-row">
-            <div class="qty-box">
+            <!--
+              A granel el cliente elige bandejas enteras, no gramos: 1, 2 o 3.
+              Es lo que se pesa en el mostrador, así que un selector de unidades
+              es más claro que un campo de gramos que habría que multiplicar a
+              mano. El campo numérico queda para el resto de productos.
+            -->
+            <div v-if="esAGranel" class="bandeja-picker">
+              <button
+                class="btn btn-outline btn-sm"
+                :disabled="isOutOfStock || bandejas <= 1"
+                @click="cambiarBandejas(-1)"
+              >
+                −
+              </button>
+              <div class="bandeja-valor">
+                <strong>{{ formatBandejas(bandejas) }}</strong>
+                <small>{{ pluralBandejas }}</small>
+              </div>
+              <button
+                class="btn btn-outline btn-sm"
+                :disabled="isOutOfStock"
+                @click="cambiarBandejas(1)"
+              >
+                +
+              </button>
+            </div>
+
+            <div v-else class="qty-box">
               <button @click="decQty" :disabled="isOutOfStock">−</button>
-              <input v-model.number="qty" type="number" :min="minQty" :step="stepQty" :disabled="isOutOfStock" />
+              <input
+                v-model.number="qty"
+                type="number"
+                :min="minQty"
+                :step="stepQty"
+                :disabled="isOutOfStock"
+                @change="normalizarQty"
+                @blur="normalizarQty"
+              />
               <button @click="incQty" :disabled="isOutOfStock">+</button>
             </div>
-            <span class="qty-hint">{{ formatQty(qty) }} {{ product.unit }}</span>
-            <button class="btn btn-secondary" :disabled="isOutOfStock" @click="add">{{ isOutOfStock ? 'Sin stock' : 'Agregar al carrito' }}</button>
+
+            <span class="qty-hint">
+              {{ formatQty(qty) }} {{ unitLabel }} · {{ money(lineTotal) }}
+            </span>
+
+            <button class="btn btn-secondary" :disabled="isOutOfStock || !qtyValido" @click="add">
+              {{ isOutOfStock ? 'Sin stock' : 'Agregar al carrito' }}
+            </button>
           </div>
-          <p v-if="!isOutOfStock && qty < minQty" class="error-msg">El mínimo es {{ formatQty(minQty) }} {{ product.unit }}</p>
+
+          <p v-if="esAGranel && !isOutOfStock" class="bulk-note">
+            No hay fracciones: se pesa {{ pluralPresentacion }} enter{{ formatBandejas(bandejas) === '1' ? 'a' : 'as' }}.
+          </p>
+          <p v-if="!isOutOfStock && !qtyValido" class="error-msg">
+            El mínimo es {{ formatQty(minQty) }} {{ unitLabel }}
+          </p>
+          <p v-else-if="!isOutOfStock && !pasoValido" class="error-msg">
+            Esa cantidad no se puede preparar: se vende en pasos de {{ formatQty(stepQty) }} {{ unitLabel }}.
+          </p>
           <p v-if="added" class="added-note">✓ Agregado al carrito</p>
         </div>
       </div>
@@ -71,12 +126,38 @@ const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number
 const isOutOfStock = computed(() => product.value != null && Number(product.value.stock) === 0)
 const minQty = computed(() => Number(product.value?.minQuantity) || 1)
 const stepQty = computed(() => Number(product.value?.stepQuantity) || 1)
+/** A granel: el peso del empaque es lo que se vende, en bandejas enteras. */
+const esAGranel = computed(() => {
+  const u = (product.value?.unit || '').toLowerCase()
+  return ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)
+})
+/** Cuántas bandejas equivalen a la cantidad actual. */
+const bandejas = computed(() => {
+  if (!esAGranel.value || minQty.value <= 0) return null
+  return Math.round((Number(qty.value) || 0) / minQty.value * 100) / 100
+})
 const unitLabel = computed(() => {
   const u = (product.value?.unit || '').toLowerCase()
-  if (u === 'kilo') return 'kg'
-  if (u === 'gramos') return 'g'
+  if (u === 'kilo' || u === 'kg' || u === 'kilogramo') return 'kg'
+  if (u === 'gramos' || u === 'g' || u === 'gramo') return 'g'
+  if (u === 'libra' || u === 'lb') return 'lb'
   return product.value?.unit || ''
 })
+/** Total de la línea, para que el cliente vea el efecto de la cantidad antes de agregar. */
+const lineTotal = computed(() => Math.round(finalPrice.value * (Number(qty.value) || 0) * 100) / 100)
+
+const qtyValido = computed(() => {
+  const n = Number(qty.value)
+  return Number.isFinite(n) && n >= minQty.value - 1e-9
+})
+/** El servidor exige múltiplos del paso. Avisarlo aquí evita llegar al checkout y fallar. */
+const pasoValido = computed(() => {
+  const n = Number(qty.value)
+  if (!Number.isFinite(n) || stepQty.value <= 0) return true
+  const pasos = n / stepQty.value
+  return Math.abs(pasos - Math.round(pasos)) < 1e-6
+})
+
 function formatQty(v) {
   const n = Number(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
@@ -89,22 +170,66 @@ function decQty() {
   qty.value = Math.max(minQty.value, next)
 }
 
+/** Añade o quita una bandeja entera. Nunca baja de una. */
+function cambiarBandejas(delta) {
+  const actual = Math.round((Number(qty.value) || 0) / minQty.value)
+  const siguiente = Math.max(1, actual + delta)
+  qty.value = Math.round(siguiente * minQty.value * 100) / 100
+}
+
+function formatBandejas(n) {
+  const v = Number(n) || 0
+  return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '')
+}
+const pluralBandejas = computed(() => {
+  const n = Math.round(Number(bandejas.value) || 1)
+  return n === 1 ? 'bandeja' : 'bandejas'
+})
+/** Cómo llama la tienda a la unidad de venta: "bandeja", "caja", "funda"… */
+const pluralPresentacion = computed(() => {
+  const p = (product.value?.presentation || '').trim().toLowerCase()
+  if (p) return p
+  return esAGranel.value ? 'bandejas' : 'unidades'
+})
+/**
+ * Ajusta lo que el cliente escribió a un múltiplo del paso hacia arriba.
+ *
+ * A granel el paso es la bandeja, así que 635 g con bandeja de 400 se guarda
+ * como 800: dos bandejas. Nunca hacia abajo, porque podría quedarle corto.
+ */
+function normalizarQty() {
+  const n = Number(qty.value)
+  if (!Number.isFinite(n) || n < minQty.value) {
+    qty.value = minQty.value
+    return
+  }
+  const pasos = Math.ceil((n - minQty.value) / stepQty.value)
+  qty.value = Math.round((minQty.value + pasos * stepQty.value) * 100) / 100
+}
+
 async function load() {
   loading.value = true
   product.value = null
   try {
     const data = await api.get(`/api/catalog/products/${route.params.slug}`)
     product.value = data.product
-    const mq = Number(data.product?.minQuantity) || 1
-    qty.value = mq
+    // Arranca en el mínimo, que a granel es una bandeja entera y siempre es una
+    // cantidad comprable.
+    qty.value = primeraCantidadValida()
   } finally {
     loading.value = false
   }
 }
 
+/** Cantidad con la que arranca el selector: el mínimo, siempre comprable. */
+function primeraCantidadValida() {
+  return Math.round((Number(product.value?.minQuantity) || 1) * 100) / 100
+}
+
 function add() {
   if (isOutOfStock.value) return
-  if (Number(qty.value) < minQty.value) qty.value = minQty.value
+  normalizarQty()
+  if (!qtyValido.value || !pasoValido.value) return
   const ok = cart.add(product.value, qty.value)
   if (!ok) return
   added.value = true
@@ -188,6 +313,11 @@ onMounted(load)
   margin-bottom: 16px;
 }
 
+.price-detail {
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+
 .product-price {
   font-size: 2rem;
   font-weight: 900;
@@ -227,6 +357,63 @@ onMounted(load)
   border: 1.5px solid var(--gray-mid);
   border-radius: 50px;
   overflow: hidden;
+}
+
+/*
+  Selector de bandejas. Muestra el número grande de bandejas y el peso debajo,
+  que es como se lee en el mostrador: "2 bandejas / 800 g".
+*/
+.bandeja-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bandeja-picker button {
+  min-width: 44px;
+  height: 46px;
+  border: 1.5px solid var(--gray-mid);
+  border-radius: var(--radius-sm);
+  background: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.bandeja-picker button:hover:not(:disabled) {
+  border-color: var(--green-light);
+  background: var(--gray-light);
+}
+
+.bandeja-picker button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bandeja-valor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 84px;
+  line-height: 1.15;
+}
+
+.bandeja-valor strong {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--green-dark);
+}
+
+.bandeja-valor small {
+  font-size: 0.72rem;
+  color: var(--gray);
+  text-transform: lowercase;
+}
+
+.bulk-note {
+  font-size: 0.82rem;
+  color: var(--gray);
+  margin-top: 10px;
 }
 
 .qty-box button {

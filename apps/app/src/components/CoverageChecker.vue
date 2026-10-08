@@ -257,14 +257,24 @@ defineExpose({ usarGeo, comprobar })
   line-height: 1.45;
 }
 
+/*
+  El botón va en línea con su nota, no debajo ocupando el ancho entero: así no
+  queda pegado al borde ni se ve cortado si el contenedor encoge.
+*/
 .coverage-actions {
   margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .coverage-note {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 0.78rem;
   color: var(--gray);
+  flex: 1;
+  min-width: 200px;
 }
 
 .coverage-reset {

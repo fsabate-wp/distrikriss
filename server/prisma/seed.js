@@ -90,12 +90,11 @@ function parseCSV(csvPath) {
     let price = parseFloat(precioRaw.replace(',', '.'))
     if (!Number.isFinite(price) || price < 0) price = 1
     const presentation = presentRaw ? presentRaw.trim() : null
-    let stepQuantity = 1
-    const unitLower = unit.toLowerCase()
-    if (unitLower === 'gramos') stepQuantity = minQuantity
-    else if (unitLower === 'kilo') stepQuantity = 1
-    else stepQuantity = 1
-    items.push({ sku: skuRaw || null, name: nameRaw, slug: slugify(nameRaw), unit, presentation, minQuantity, stepQuantity, price, categoryName: currentCategory })
+// A granel el paso ES la bandeja: se vende 1, 2 o 3 bandejas, nunca media
+  // bandeja. El mínimo del CSV es el peso de la bandeja, así que el paso
+  // coincide con él y el cliente solo elige cuántas bandejas quiere.
+  const stepQuantity = minQuantity
+  items.push({ sku: skuRaw || null, name: nameRaw, slug: slugify(nameRaw), unit, presentation, minQuantity, stepQuantity, price, categoryName: currentCategory })
   }
   return items
 }

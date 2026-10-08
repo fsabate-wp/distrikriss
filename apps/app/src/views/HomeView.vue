@@ -141,19 +141,26 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* El aviso de cobertura sube sobre el borde inferior del hero para que se lea
-   como parte de la invitación, no como un bloque suelto. */
+/*
+  El aviso de cobertura sube sobre el borde inferior del hero para leerse como
+  parte de la invitación, no como un bloque suelto.
+
+  Antes el buscador hacía lo mismo (`margin-top: -40px`) y los dos se solapaban:
+  la caja blanca del buscador tapaba el botón "Comprobar si llegamos a tu casa",
+  que quedaba cortado por abajo. Se separa el hero → aviso → buscador con
+  márgenes reales en vez de superponer dos cajas que no sabían de la existencia
+  de la otra.
+*/
 .coverage-slot {
-  margin-top: -34px;
+  margin-top: -28px;
   position: relative;
   z-index: 10;
-  margin-bottom: -4px;
+  margin-bottom: 22px;
 }
 
 .toolbar {
   display: flex;
   gap: 14px;
-  margin-top: -40px;
   background: white;
   padding: 16px;
   border-radius: var(--radius);
