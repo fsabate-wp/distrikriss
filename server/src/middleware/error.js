@@ -28,7 +28,19 @@ export function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: 'Datos inválidos', issues: err.issues })
   }
   if (typeof err?.status === 'number' && err.status >= 400 && err.status < 500) {
-    return res.status(err.status).json({ error: err.message })
+    // Los routes adjuntan `code` a propósito (INVALID_STEP, OUT_OF_STOCK,
+    // BELOW_MINIMUM…) para que el cliente distinga un rechazo de negocio de un
+    // fallo cualquiera. Sin reenviarlo, esa información se perdía: el mensaje
+    // llegaba pero el código nunca.
+    const cuerpo = { error: err.message }
+    if (typeof err.code === 'string') cuerpo.code = err.code
+    if (typeof err.field === 'string') cuerpo.field = err.field
+    if (typeof err.minOrderAmount === 'number') {
+      cuerpo.minOrderAmount = err.minOrderAmount
+      cuerpo.subtotal = err.subtotal
+      cuerpo.missing = err.missing
+    }
+    return res.status(err.status).json(cuerpo)
   }
 
   // Los errores del SRI y del certificado sí son accionables para el

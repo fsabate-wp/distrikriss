@@ -21,13 +21,18 @@
           <p v-if="product.presentation" class="product-presentation">Empaque: {{ product.presentation }}</p>
           <p v-if="product.description" class="product-desc">{{ product.description }}</p>
           <p class="product-price">
-            {{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small>
+            {{ money(finalPrice) }}
+            <small class="price-suffix">
+              <template v-if="vendePorEmpaque">por {{ formatQty(minQty) }} {{ unitLabel }}</template>
+              <template v-else>/ {{ unitLabel }}</template>
+            </small>
             <span v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</span>
             <span v-if="product.discount && product.discount < 100" class="product-discount">{{ product.discount }}%</span>
           </p>
           <p class="muted price-detail">
-            <template v-if="esAGranel">
-              Precio por {{ unitLabel }} · se vende por {{ pluralPresentacion }} de {{ formatQty(minQty) }} {{ unitLabel }}
+            <template v-if="vendePorEmpaque">
+              El precio es de {{ pluralPresentacion }} completa{{ formatQty(minQty) === '1' ? '' : 's' }} de
+              {{ formatQty(minQty) }} {{ unitLabel }}, no por {{ unitLabel }}
             </template>
             <template v-else>
               Precio por {{ unitLabel }} · Mínimo {{ formatQty(minQty) }} {{ unitLabel }}<span v-if="stepQty !== minQty"> · incrementos de {{ formatQty(stepQty) }} {{ unitLabel }}</span>
@@ -112,7 +117,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
-import { money, discountedPrice } from '../utils/format.js'
+import { money, discountedPrice, precioPorUnidad, unidadesDeVenta } from '../utils/format.js'
 
 const route = useRoute()
 const cart = useCartStore()
@@ -131,6 +136,15 @@ const esAGranel = computed(() => {
   const u = (product.value?.unit || '').toLowerCase()
   return ['gramos', 'g', 'gramo', 'kilo', 'kg', 'kilogramo', 'libra', 'lb'].includes(u)
 })
+/**
+ * ¿El precio es el de un empaque y no el de una unidad de medida?
+ *
+ * Si el mínimo es mayor que 1, el tendero puso el precio de la bandeja o de la
+ * funda. En ese caso el precio se anuncia por empaque, porque un "/ g" al lado
+ * de $1 haría creer que el gramo cuesta un dólar.
+ */
+const vendePorEmpaque = computed(() => unidadesDeVenta(product.value?.minQuantity) > 1)
+
 /** Cuántas bandejas equivalen a la cantidad actual. */
 const bandejas = computed(() => {
   if (!esAGranel.value || minQty.value <= 0) return null
@@ -144,7 +158,9 @@ const unitLabel = computed(() => {
   return product.value?.unit || ''
 })
 /** Total de la línea, para que el cliente vea el efecto de la cantidad antes de agregar. */
-const lineTotal = computed(() => Math.round(finalPrice.value * (Number(qty.value) || 0) * 100) / 100)
+const lineTotal = computed(() =>
+  Math.round(precioPorUnidad(finalPrice.value, minQty.value) * (Number(qty.value) || 0) * 100) / 100,
+)
 
 const qtyValido = computed(() => {
   const n = Number(qty.value)

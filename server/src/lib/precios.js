@@ -28,6 +28,38 @@ export function descuentoValido(descuento) {
 }
 
 /**
+ * Cuántas unidades de venta cubre el precio del catálogo.
+ *
+ * El precio que pone el tendero es el de la UNIDAD MÍNIMA, no el de una unidad
+ * de medida: una bandeja de 400 g que cuesta $1 son $1 por los 400 g, no $1 por
+ * gramo. Con la regla anterior, esa bandeja salía a $400.
+ *
+ * Es uniforme a propósito. En un producto con mínimo 1 el divisor es 1 y nada
+ * cambia; en uno con mínimo 400 g el precio se divide entre 400; en uno con
+ * mínimo 4 unidades, entre 4. El mínimo es siempre "una bandeja", diga la
+ * unidad lo que diga.
+ */
+export function unidadesDeVenta(minQuantity) {
+  const n = Number(minQuantity)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+/**
+ * Precio por unidad de medida, que es la base de la línea del pedido.
+ *
+ * Se conserva con 6 decimales porque al dividir entre 400 el precio se vuelve
+ * pequeño ($1 / 400 = $0.0025) y con 2 se perdería: el total de la línea no
+ * cuadraría con lo que se ve en la tarjeta. El redondeo a dinero se hace sobre
+ * el total de la línea, nunca sobre este valor intermedio.
+ */
+export function precioPorUnidad(precio, minQuantity) {
+  const p = Number(precio) || 0
+  const unidades = unidadesDeVenta(minQuantity)
+  if (unidades === 1) return p
+  return Math.round((p / unidades) * 1e6) / 1e6
+}
+
+/**
  * Subtotal del pedido: la suma de las líneas se redondea al final, que es como
  * lo presenta el carrito. El servidor redondea cada línea antes de sumar, así
  * que ambos caminos pueden diferir en un céntimo. Se usa el mismo criterio en

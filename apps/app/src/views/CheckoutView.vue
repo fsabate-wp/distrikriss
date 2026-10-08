@@ -199,7 +199,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money, discountedPrice } from '../utils/format.js'
+import { money, discountedPrice, precioPorUnidad } from '../utils/format.js'
 import MapPicker from '../components/MapPicker.vue'
 import DeliverySlotPicker from '../components/DeliverySlotPicker.vue'
 import CoverageChecker from '../components/CoverageChecker.vue'
@@ -503,7 +503,10 @@ async function reconcileCart() {
         cart.remove(item.productId)
         continue
       }
-      const precioActual = discountedPrice(p.price, p.discount)
+      // El catálogo da el precio de la bandeja; el carrito lo guarda por unidad,
+      // que es lo que se multiplica por la cantidad en gramos.
+      const precioVenta = discountedPrice(p.price, p.discount)
+      const precioUnitario = precioPorUnidad(precioVenta, p.minQuantity)
       const stock = Number(p.stock)
       let cantidad = Number(item.quantity)
 
@@ -519,10 +522,11 @@ async function reconcileCart() {
       if (Math.abs(cantidad - Number(item.quantity)) > 1e-9) {
         item.quantity = Math.round(cantidad * 100) / 100
       }
-      if (Math.abs(precioActual - Number(item.price)) > 1e-9) {
-        cambios.push({ type: 'price', item, antes: item.price, ahora: precioActual })
-        item.price = precioActual
+      if (Math.abs(precioUnitario - Number(item.price)) > 1e-9) {
+        cambios.push({ type: 'price', item, antes: item.salePrice ?? item.price, ahora: precioVenta })
+        item.price = precioUnitario
       }
+      item.salePrice = precioVenta
       item.minQuantity = minQ
       item.stepQuantity = Number(p.stepQuantity) || 1
       item.name = p.name

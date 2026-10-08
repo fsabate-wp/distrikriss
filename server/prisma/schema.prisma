@@ -153,14 +153,18 @@ model OrderItem {
   sku          String?
   unit         String
   presentation String?
-  price        Decimal  @db.Decimal(10, 2)
+  // Precio por unidad de medida, no por bandeja. El catalogo guarda el precio de
+  // la unidad minima, asi que una bandeja de 400 g a $1 son $0.0025 por gramo: con
+  // 2 decimales ese valor se quedaria en 0.00 y el total de la linea no cuadraria
+  // con lo que el cliente vio en pantalla.
+  price        Decimal  @db.Decimal(16, 6)
   quantity     Decimal  @db.Decimal(10, 2)
   ivaRate      Decimal? @db.Decimal(4, 2)
   // Snapshot del descuento aplicado en el pedido. Sin esto la factura electronic
   // no puede emitir <descuento> y el XML queda discordante con lo que se cobro.
   discountPct  Int      @default(0)
   // Precio de lista antes del descuento. Sirve para reconstruir y auditar la linea.
-  listPrice    Decimal? @db.Decimal(10, 2)
+  listPrice    Decimal? @db.Decimal(16, 6)
   sriCode      String?
 }
 

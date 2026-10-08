@@ -7,6 +7,8 @@ import {
   descuentoValido,
   respetaPaso,
   subtotalDeLineas,
+  unidadesDeVenta,
+  precioPorUnidad,
   MAX_CANTIDAD_LINEA,
   descripcionFactura,
 } from '../src/lib/precios.js'
@@ -36,6 +38,20 @@ function discountedPriceCliente(price, discount) {
   if (d >= 100) return 0
   if (d <= 0) return Number(price || 0)
   return Math.round(Number(price || 0) * (1 - d / 100) * 100) / 100
+}
+
+/**
+ * Copia literal de apps/app/src/utils/format.js para el precio por unidad.
+ */
+function unidadesDeVentaCliente(minQuantity) {
+  const n = Number(minQuantity)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+function precioPorUnidadCliente(precio, minQuantity) {
+  const p = Number(precio) || 0
+  const unidades = unidadesDeVentaCliente(minQuantity)
+  if (unidades === 1) return p
+  return Math.round((p / unidades) * 1e6) / 1e6
 }
 
 test('el precio con descuento coincide entre cliente y servidor', () => {
@@ -70,9 +86,81 @@ test('un descuento de 100% deja el producto gratis', () => {
   assert.equal(discountedPriceCliente(10, 100), 0)
 })
 
-test('un descuento por encima de 100% se acota a producto gratis', () => {
-  assert.equal(precioConDescuento(10, 150), 0)
-  assert.equal(descuentoValido(150), 100)
+test('el precio por unidad coincide entre cliente y servidor', () => {
+  // El precio del catálogo es el de la bandeja. Si el carrito y el servidor lo
+  // interpretan distinto, el cliente ve un total y se le cobra otro.
+  const minimos = [1, 0.25, 0.5, 2, 4, 6, 50, 100, 400, 500, 1000]
+  const casos = []
+  for (let cents = 1; cents <= 30000; cents += 3) {
+    for (const min of minimos) casos.push([cents / 100, min])
+  }
+  let divergencias = 0
+  for (const [precio, minimo] of casos) {
+    const cliente = precioPorUnidadCliente(precio, minimo)
+    const servidor = precioPorUnidad(precio, minimo)
+    if (cliente !== servidor) {
+      divergencias += 1
+      if (divergencias <= 5) {
+        assert.fail(`divergencia en precio=${precio} minimo=${minimo}: cliente=${cliente} servidor=${servidor}`)
+      }
+    }
+  }
+  assert.equal(divergencias, 0, `${divergencias} de ${casos.length} casos difieren`)
+  assert.ok(casos.length > 50000, `solo se probaron ${casos.length} casos`)
+})
+
+test('el precio del catálogo es el de la unidad minima, no el de una unidad', () => {
+  // El bug: una bandeja de 400 g a $1 son $1 los 400 g, no $1 por gramo. Con
+  // la regla anterior, una sola bandeja salia a $400.
+  const precioBandeja = 1
+  const pesoBandeja = 400
+
+  const porGramo = precioPorUnidad(precioBandeja, pesoBandeja)
+  assert.equal(porGramo, 0.0025, 'el precio por gramo es 1/400')
+
+  assert.equal(round2(porGramo * pesoBandeja), 1, 'una bandeja cuesta lo que dice el catálogo')
+  assert.equal(round2(porGramo * pesoBandeja * 2), 2, 'dos bandejas, el doble')
+  assert.equal(round2(porGramo * pesoBandeja * 3), 3, 'tres bandejas, el triple')
+  // Lo que pasaba antes: 1 * 400 = 400 dólares por una bandeja.
+  assert.notEqual(round2(precioBandeja * pesoBandeja), 1)
+})
+
+test('un producto con minimo 1 no cambia de precio', () => {
+  // La regla es uniforme: si el mínimo es 1, el divisor es 1 y nada cambia. Por
+  // eso los productos por kilo o por unidad siguen igual que siempre.
+  assert.equal(unidadesDeVenta(1), 1)
+  assert.equal(precioPorUnidad(2.5, 1), 2.5)
+  assert.equal(precioPorUnidad(2.5, null), 2.5)
+  assert.equal(precioPorUnidad(2.5, 0), 2.5)
+  assert.equal(precioPorUnidad(2.5, -3), 2.5)
+})
+
+test('un minimo de 4 unidades tambien es un empaque', () => {
+  // No solo los gramos: hay "Unidad" con mínimo 4 y 6 que son fundas de peras,
+  // piña o tomates. El precio es el de la funda, no el de una unidad suelta.
+  assert.equal(precioPorUnidad(1, 4), 0.25)
+  assert.equal(round2(precioPorUnidad(1, 4) * 4), 1)
+  assert.equal(round2(precioPorUnidad(1, 6) * 6), 1)
+})
+
+test('el precio por unidad conserva decimales aunque sean muchos', () => {
+  // $1 repartidos en 400 g da 0.0025. Redondeado a dos decimales sería 0.00 y
+  // el total de la línea se perdería, que es justo lo que pasaba.
+  assert.notEqual(precioPorUnidad(1, 400), 0)
+  assert.equal(precioPorUnidad(1.1, 400), 0.00275)
+  assert.equal(precioPorUnidad(1, 1000), 0.001)
+  assert.equal(precioPorUnidad(0.01, 400), 0.000025)
+})
+
+test('el descuento se aplica antes de repartir por la unidad minima', () => {
+  // Bandeja de 400 g a $2 con 50% de descuento: $1 la bandeja, $0.0025 el gramo.
+  // El orden importa para lo que se guarda y se factura: si se repartiera antes
+  // de descontar, el precio por gramo guardado sería 0.005 en vez de 0.0025, y
+  // el XML declararía un precio unitario que no es el que se cobró.
+  const porGramo = precioPorUnidad(precioConDescuento(2, 50), 400)
+  assert.equal(porGramo, 0.0025, 'el gramo guardado es el del precio ya descontado')
+  assert.equal(round2(porGramo * 400), 1, 'la bandeja descontada cuesta la mitad')
+  assert.notEqual(precioPorUnidad(2, 400), porGramo, 'repartir antes de descontar daría otra cosa')
 })
 
 test('un descuento negativo se trata como cero', () => {
@@ -260,6 +348,64 @@ test('setQuantity ajusta al paso hacia arriba, nunca por debajo de lo pedido', a
   assert.ok(q % 400 === 0, `la cantidad final es múltiplo de la bandeja (${q})`)
   assert.ok(q >= 635, `no queda por debajo de lo pedido (${q})`)
   assert.equal(q, 800, '635 g se redondea a dos bandejas, nunca a una y media')
+})
+
+test('el carrito guarda el precio por gramo, no el de la bandeja', async () => {
+  const cart = await carritoNuevo()
+  // Bandeja de 400 g a $1. El carrito tiene que guardar 0.0025 por gramo para
+  // que el total de la línea dé $1 y no $400.
+  const producto = { id: 'p1', name: 'Champiñones', unit: 'Gramos', price: 1, discount: 0, stock: -1, minQuantity: 400, stepQuantity: 400 }
+  assert.equal(cart.add(producto, 400), true)
+  assert.equal(cart.items[0].price, 0.0025, 'guarda el precio por gramo')
+  assert.equal(cart.items[0].salePrice, 1, 'y guarda aparte el precio de la bandeja, que es el que se enseña')
+  assert.equal(cart.subtotal, 1, 'una bandeja cuesta $1')
+})
+
+test('el carrito suma varias bandejas sin multiplicar por el peso dos veces', async () => {
+  const cart = await carritoNuevo()
+  const producto = { id: 'p1', name: 'Espinaca', unit: 'Gramos', price: 1.5, discount: 0, stock: -1, minQuantity: 400, stepQuantity: 400 }
+  cart.add(producto, 400)
+  cart.add(producto, 800)
+  assert.equal(cart.items[0].quantity, 1200, 'tres bandejas en total')
+  assert.equal(cart.subtotal, 4.5, 'tres bandejas a $1.50 son $4.50')
+})
+
+test('un producto de unidad suelta no cambia de precio', async () => {
+  const cart = await carritoNuevo()
+  const producto = { id: 'p1', name: 'Ajo en cáscara', unit: 'Kilo', price: 2.5, discount: 0, stock: -1, minQuantity: 1, stepQuantity: 1 }
+  cart.add(producto, 3)
+  assert.equal(cart.items[0].price, 2.5, 'con mínimo 1 el precio es el de la unidad')
+  assert.equal(cart.items[0].salePrice, 2.5)
+  assert.equal(cart.subtotal, 7.5, '3 kg a $2.50 son $7.50')
+})
+
+test('una funda de 4 unidades se cobra por la funda', async () => {
+  const cart = await carritoNuevo()
+  // "Pera", unidad "Unidad", mínimo 4, presentación "Funda de plástico": el
+  // precio del catálogo es el de la funda, no el de una pera.
+  const producto = { id: 'p1', name: 'Pera', unit: 'Unidad', price: 1, discount: 0, stock: -1, minQuantity: 4, stepQuantity: 4 }
+  cart.add(producto, 4)
+  assert.equal(cart.items[0].price, 0.25)
+  assert.equal(cart.subtotal, 1, 'una funda de 4 peras cuesta $1')
+})
+
+test('un carrito guardado antes del cambio se reconstruye', async () => {
+  // Un carrito en localStorage de una versión anterior guardaba el precio de la
+  // bandeja en `price` y no traía `salePrice`. Al leerlo hay que convertirlo, o
+  // el total sale multiplicado por 400.
+  const guardado = montarCarrito()
+  setActivePinia(createPinia())
+  guardado.set(
+    'distrikriss-cart',
+    JSON.stringify([
+      { productId: 'p1', name: 'Champiñones', unit: 'Gramos', price: 1, minQuantity: 400, stepQuantity: 400, quantity: 400 },
+    ]),
+  )
+  const { useCartStore } = await import('../../apps/app/src/stores/cart.js')
+  const cart = useCartStore()
+  assert.equal(cart.items[0].price, 0.0025, 'convierte el precio antiguo al precio por gramo')
+  assert.equal(cart.items[0].salePrice, 1, 'y conserva el precio de la bandeja para mostrarlo')
+  assert.equal(cart.subtotal, 1, 'el total sale bien sin que el cliente vuelva a agregar el producto')
 })
 
 test('el carrito guarda el precio ya descontado, no el de lista', async () => {

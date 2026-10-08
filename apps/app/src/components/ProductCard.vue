@@ -24,7 +24,19 @@
         </p>
         <p v-if="product.presentation && !isBulk" class="product-presentation">{{ product.presentation }}</p>
         <div class="product-price-row">
-          <p class="product-price">{{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small></p>
+          <!--
+            El precio del catálogo es el de la unidad mínima. Si el mínimo es 1,
+            "/ kg" es lo correcto. Si el producto se vende por empaque, el precio
+            es el de ese empaque y poner "/ g" haría pensar que $1 son $1 por
+            gramo, cuando en realidad es por los 400 g de la bandeja.
+          -->
+          <p class="product-price">
+            {{ money(finalPrice) }}
+            <small class="price-suffix">
+              <template v-if="vendePorEmpaque">por {{ formatQty(product.minQuantity) }} {{ unitLabel }}</template>
+              <template v-else>/ {{ unitLabel }}</template>
+            </small>
+          </p>
           <p v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</p>
         </div>
         <!--
@@ -46,7 +58,7 @@
 import { computed } from 'vue'
 import { useCartStore } from '../stores/cart.js'
 import { useSettingsStore } from '../stores/settings.js'
-import { money, discountedPrice } from '../utils/format.js'
+import { money, discountedPrice, unidadesDeVenta } from '../utils/format.js'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const cart = useCartStore()
@@ -82,6 +94,15 @@ const bulkVenta = computed(() => {
   // En minúscula porque va dentro de una frase: "Por caja de plástico de…".
   return p.charAt(0).toLowerCase() + p.slice(1)
 })
+
+/**
+ * ¿El precio es el de un empaque y no el de una unidad de medida?
+ *
+ * Si el mínimo es mayor que 1, el tendero puso el precio de la bandeja. En ese
+ * caso el precio se anuncia por bandeja, porque un "/ g" al lado de $1 haría
+ * creer que el gramo cuesta un dólar.
+ */
+const vendePorEmpaque = computed(() => unidadesDeVenta(props.product.minQuantity) > 1)
 function formatQty(v) {
   const n = Number(v)
   return Number.isInteger(n) ? n : n.toFixed(2).replace(/\.?0+$/,'')

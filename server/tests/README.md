@@ -116,10 +116,12 @@ Las tarifas admitidas son las del catálogo del SRI: **0, 2, 3, 4, 5, 10, 12,
 14 y 15 %**. Una tarifa fuera de esa lista se rechaza al guardar el producto y
 al emitir, en vez de caer a 15 % en silencio.
 
-El precio del catálogo se trata como **IVA incluido**. El descuento se aplica
-en el servidor y `OrderItem.price` guarda lo cobrado, con `listPrice` como
-referencia. La factura deriva el descuento de esa diferencia, de modo que el
-total fiscal no puede descuadrar del comercial.
+El precio del catálogo se trata como **IVA incluido** y es el de la **unidad
+mínima**: una bandeja de 400 g a $1 son $0.0025 por gramo. El descuento se
+aplica en el servidor y `OrderItem.price` guarda el precio por unidad ya
+descontado, con `listPrice` como referencia. La factura deriva el descuento de
+esa diferencia, de modo que el total fiscal no puede descuadrar del comercial.
+Detalle completo en README-COMPRA.md.
 
 `precioUnitario` se emite con hasta 6 decimales. Redondearlo a 2 descuadra
 `cantidad × precio unitario` frente a `precioTotalSinImpuesto` en venta a
@@ -156,7 +158,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 116 pruebas unitarias
+npm test                              # 133 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

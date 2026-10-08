@@ -9,6 +9,26 @@ export function discountedPrice(price, discount) {
   return Math.round(Number(price || 0) * (1 - d / 100) * 100) / 100
 }
 
+/**
+ * Copia literal de server/src/lib/precios.js. Si el servidor cambia la regla,
+ * esta copia hay que actualizarla y precios.test.js debe fallar.
+ *
+ * El precio del catálogo es el de la unidad mínima (la bandeja), no el de una
+ * unidad de medida: $1 por una bandeja de 400 g son $0.0025 por gramo. Con la
+ * regla anterior el total de la línea salía multiplicado por 400.
+ */
+export function unidadesDeVenta(minQuantity) {
+  const n = Number(minQuantity)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+export function precioPorUnidad(precio, minQuantity) {
+  const p = Number(precio) || 0
+  const unidades = unidadesDeVenta(minQuantity)
+  if (unidades === 1) return p
+  return Math.round((p / unidades) * 1e6) / 1e6
+}
+
 export function formatDate(dateStr) {
   const d = new Date(dateStr)
   return d.toLocaleDateString('es-EC', {

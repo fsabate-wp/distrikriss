@@ -88,7 +88,9 @@ try {
   for (const z of zonasViejas) {
     await prisma.order.deleteMany({ where: { slotId: { startsWith: 'ecom' } } })
     await prisma.category.deleteMany({ where: { name: { startsWith: 'Cat ' } } })
-    await prisma.product.deleteMany({ where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango'] } } })
+await prisma.product.deleteMany({
+    where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango', 'Champiñones en bandeja'] } },
+  })
     await prisma.deliveryZone.delete({ where: { id: z.id } })
   }
   if (zonasViejas.length) console.log(`  (${zonasViejas.length} zonas de corridas previas eliminadas)`)
@@ -339,6 +341,60 @@ try {
   r = await fetch(`${BASE}/api/catalog/products?all=true`)
   check(r.ok, 'el modo all=true del checkout sigue disponible')
 
+  console.log('\n=== 6b. El precio es el de la bandeja, no el del gramo ===')
+  // El caso real del catálogo: champiñones a $1 la bandeja de 400 g. Con la
+  // regla anterior el servidor cobraba 1 x 400 = $400 por una sola bandeja.
+  const bandeja = await prisma.product.create({
+    data: {
+      name: 'Champiñones en bandeja',
+      slug: rand('champinones-'),
+      price: 1,
+      discount: 0,
+      unit: 'Gramos',
+      minQuantity: 400,
+      stepQuantity: 400,
+      // Stock en gramos: 4000 g permiten diez bandejas. Queda anotado aparte que
+      // el stock y la cantidad comparten unidad, así que un stock pequeño deja el
+      // producto invendible aunque haya existencias de sobra.
+      stock: 4000,
+      categoryId: cat.id,
+      ivaRate: 15,
+    },
+  })
+
+  const unaBandeja = await pedir([{ productId: bandeja.id, quantity: 400 }])
+  check(unaBandeja.res.ok, `pedido de una bandeja: ${unaBandeja.res.status} ${unaBandeja.body?.error || ''}`)
+  const o1 = unaBandeja.body?.order
+  if (o1) {
+    check(Number(o1.subtotal) === 1, `una bandeja de 400 g cuesta $1, no $400 (subtotal=${o1.subtotal})`)
+    const linea = o1.items?.[0]
+    check(Number(linea?.price) === 0.0025, `la linea guarda el precio por gramo (${linea?.price})`)
+    check(Number(linea?.quantity) === 400, `la linea guarda 400 g (${linea?.quantity})`)
+    await prisma.order.delete({ where: { id: o1.id } })
+  }
+
+  const tresBandejas = await pedir([{ productId: bandeja.id, quantity: 1200 }])
+  const o3 = tresBandejas.body?.order
+  if (o3) {
+    check(Number(o3.subtotal) === 3, `tres bandejas cuestan $3 (subtotal=${o3.subtotal})`)
+    check(Number(o3.subtotal) !== 1200, 'y no $1200')
+    await prisma.order.delete({ where: { id: o3.id } })
+  }
+
+  // Media bandeja no existe: el servidor lo rechaza por el paso de venta.
+  const media = await pedir([{ productId: bandeja.id, quantity: 635 }])
+  check(!media.res.ok, `635 g no se puede pedir: HTTP ${media.res.status}`)
+  check(media.body?.code === 'INVALID_STEP', `con el codigo de paso de venta (${media.body?.code})`)
+  check(/400 Gramos/.test(media.body?.error || ''), 'y el mensaje dice cuál es el paso')
+
+  // El precio del catálogo sigue siendo el de la bandeja en la respuesta.
+  r = await fetch(`${BASE}/api/catalog/products?search=Champinones`)
+  const catalogo = await r.json()
+  const enCatalogo = catalogo.products.find((p) => p.id === bandeja.id)
+  check(Number(enCatalogo?.price) === 1, 'el catálogo sigue mostrando $1')
+  check(Number(enCatalogo?.minQuantity) === 400, 'y que el mínimo es 400 g')
+  check(Number(enCatalogo?.stepQuantity) === 400, 'y que se vende en bandejas de 400 g')
+
   console.log('\n=== 7. El catalogo sigue abierto ===')
   const catNo = await fetch(`${BASE}/api/catalog/products?limit=200`)
   check(catNo.status === 200, 'el catalogo es publico sin sesion')
@@ -351,7 +407,9 @@ try {
 console.log('\n=== Limpieza ===')
 if (datos) {
   await prisma.order.deleteMany({ where: { user: { email: { in: [datos.email, datos.email2] } } } })
-  await prisma.product.deleteMany({ where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango'] } } })
+  await prisma.product.deleteMany({
+      where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango', 'Champiñones en bandeja'] } },
+    })
   await prisma.category.deleteMany({ where: { id: datos.cat.id } })
   await prisma.deliveryZone.deleteMany({ where: { id: datos.zona.id } })
   await prisma.user.deleteMany({ where: { email: { in: [datos.email, datos.email2] } } })

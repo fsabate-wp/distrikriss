@@ -21,8 +21,20 @@
             </div>
             <div class="cart-item-info">
               <p class="cart-item-name">{{ item.name }}</p>
-              <p class="cart-item-meta">{{ money(item.price) }} / {{ item.unit }}<span v-if="item.presentation"> · {{ item.presentation }}</span></p>
-              <p v-if="item.minQuantity" class="cart-item-meta">Mín {{ formatQty(item.minQuantity) }} · paso {{ formatQty(item.stepQuantity || 1) }}</p>
+              <!--
+                El precio que se muestra es el de la bandeja, que es como lo
+               lo fija el tendero. `item.price` es el precio por gramo y solo
+                sirve para multiplicar por la cantidad: enseñarlo daría $0.00.
+              -->
+              <p class="cart-item-meta">
+                {{ money(precioVentaDe(item)) }}
+                <span v-if="esVentaPorEmpaque(item)">por {{ formatQty(item.minQuantity) }} {{ item.unit }}</span>
+                <span v-else>/ {{ item.unit }}</span>
+                <span v-if="item.presentation"> · {{ item.presentation }}</span>
+              </p>
+              <p v-if="esVentaPorEmpaque(item)" class="cart-item-meta">
+                {{ formatQty(item.quantity) }} {{ item.unit }} en total
+              </p>
               <div class="qty-control">
                 <button @click="cart.decrement(item.productId)">−</button>
                 <span>{{ formatQty(item.quantity) }} {{ item.unit }}</span>
@@ -81,11 +93,26 @@ import { useCartStore } from '../stores/cart.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { computed } from 'vue'
-import { money } from '../utils/format.js'
+import { money, unidadesDeVenta } from '../utils/format.js'
 
 function formatQty(v) {
   const n = Number(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+/**
+ * Precio que se le enseña al cliente: el de la bandeja, nunca el precio por
+ * gramo. Los carritos guardados antes del cambio no traen `salePrice`, así que
+ * se reconstruye desde el precio por unidad.
+ */
+function precioVentaDe(item) {
+  if (item.salePrice != null) return Number(item.salePrice)
+  return Number(item.price || 0) * unidadesDeVenta(item.minQuantity)
+}
+
+/** ¿El producto se vende por empaque (bandeja, funda) en vez de por unidad? */
+function esVentaPorEmpaque(item) {
+  return unidadesDeVenta(item.minQuantity) > 1
 }
 
 defineProps({ open: Boolean })

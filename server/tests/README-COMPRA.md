@@ -9,16 +9,47 @@ que se cobra.
 
 La regla vive en **`server/src/lib/precios.js`** y está replicada en
 `apps/app/src/utils/format.js`. `tests/precios.test.js` recorre ~50.000
-combinaciones de precio y descuento comparando ambas copias: si divergen, el
-carrito muestra una cifra y el pedido cobra otra.
+combinaciones de precio, descuento y mínimo comparando ambas copias: si
+divergen, el carrito muestra una cifra y el pedido cobra otra.
 
 | Concepto | Regla |
 |---|---|
-| Precio de catálogo | IVA incluido (es lo que ve el consumidor) |
+| Precio de catálogo | IVA incluido, y es el de la **unidad mínima** (la bandeja) |
 | Descuento | 0–100 %, aplicado sobre el precio de lista |
-| Precio unitario cobrado | `round2(precio * (1 - descuento/100))` |
+| Precio por unidad de medida | `round6(precio × (1 - descuento/100) / minimo)` |
 | Subtotal | Suma de líneas, con `round2` en cada una |
 | Total | Subtotal + envío, redondeado a dos decimales |
+
+### El precio es de la bandeja, no del gramo
+
+El tendero fija el precio de lo mínimo que se puede comprar. Si los champiñones
+están a $1 y la bandeja son 400 g, esos $1 son por los 400 g: **$0.0025 por
+gramo**. Antes se multiplicaba `$1 × 400 g` y una sola bandeja salía a $400.
+
+La regla es uniforme, sin mirar la unidad: el divisor es siempre `minQuantity`.
+Con mínimo 1 no cambia nada (es el caso de los productos por kilo o por
+unidad), y con mínimo 400 divide entre 400. Los productos de "Unidad" con
+mínimo 4 o 6 del catálogo son fundas, no unidades sueltas, y también se cobran
+por el empaque.
+
+Por eso `OrderItem.price` guarda el precio **por unidad de medida**, no el de la
+bandeja, y por eso la columna es `DECIMAL(16,6)`: con dos decimales, $0.0025 se
+quedaría en $0.00 y el total de la línea se perdería. El redondeo a dinero se
+hace sobre el total de la línea, nunca sobre ese valor intermedio.
+
+El descuento se aplica **antes** de dividir. Al revés, el precio por gramo
+guardado sería el de lista y el XML declararía un precio unitario que no es el
+que se cobró.
+
+En pantalla nunca se muestra el precio por gramo, que aparecería como $0.00. Se
+anuncia el precio del empaque: "Por caja de plástico de 400 g".
+
+### Stock
+
+El stock comparte unidad con la cantidad: los 400 g de una bandeja se comparan
+contra el número de stock. Si el tendero pone 10 y la bandeja son 400 g, el
+producto queda invendible aunque haya existencias de sobra. Conviene documentar
+en el panel que el stock va en la misma unidad que el mínimo.
 
 El servidor **nunca** toma el precio del cliente: siempre lo lee del catálogo y
 lo calcula. El carrito guarda un precio para mostrarlo, pero es informativo.
@@ -201,8 +232,8 @@ datos bancarios: el panel pedirá reintroducirlos.
 
 | Campo | Para qué |
 |---|---|
-| `price` | Precio unitario cobrado (con descuento) |
-| `listPrice` | Precio de catálogo, para calcular el descuento |
+| `price` | Precio por unidad de medida cobrado (con descuento) |
+| `listPrice` | Precio de lista por unidad, para calcular el descuento |
 | `discountPct` | Descuento aplicado |
 | `ivaRate` | Tarifa de IVA en el momento de la venta |
 
@@ -213,7 +244,7 @@ declaraba descuento cero.
 ## Pruebas
 
 ```bash
-npm test                                  # 116 unitarias
+npm test                                  # 133 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 
@@ -224,7 +255,7 @@ npm run test:e2e                          # comprobaciones contra PostgreSQL
 | `tests/e2e-compra.mjs` | Sobreventa, stock, numeración, totales reales |
 | `tests/e2e-facturacion.mjs` | XML, claves de acceso, reconciliación |
 | `tests/e2e-geolocalizacion.mjs` | Zonas, polígonos, cobertura |
-| `tests/e2e-ecommerce.mjs` | RIDE del cliente, aislamiento, recompra, búsqueda |
+| `tests/e2e-ecommerce.mjs` | RIDE del cliente, aislamiento, recompra, búsqueda, precio por bandeja |
 | `tests/http-geolocalizacion.mjs` | Endpoints de cobertura sobre HTTP |
 
 `e2e-compra.mjs` incluye las pruebas de concurrencia que no pueden simularse con

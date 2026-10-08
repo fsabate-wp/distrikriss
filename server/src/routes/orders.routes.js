@@ -32,6 +32,7 @@ router.use(requireAuth)
 const {
   round2,
   precioConDescuento,
+  precioPorUnidad,
   descuentoValido,
   respetaPaso,
   MAX_CANTIDAD_LINEA,
@@ -303,11 +304,17 @@ router.post('/', limits.checkout, async (req, res, next) => {
         )
       }
 
-      // El precio del catálogo es IVA incluido. El descuento se aplica aquí, en el
-      // servidor: antes el carrito mostraba el precio descontado y el pedido
-      // cobraba el precio de lista, y la factura declaraba descuento cero.
+      // El precio del catálogo es IVA incluido y es el de la unidad mínima (la
+      // bandeja). El descuento se aplica aquí, en el servidor: antes el carrito
+      // mostraba el precio descontado y el pedido cobraba el precio de lista, y
+      // la factura declaraba descuento cero.
       const pct = descuentoValido(product.discount)
-      const unitPrice = precioConDescuento(product.price, pct)
+      const precioVenta = precioConDescuento(product.price, pct)
+      // Y se convierte a precio por unidad de medida, que es lo que se cobra al
+      // multiplicar por la cantidad en gramos. Sin esta división, una bandeja de
+      // 400 g a $1 salía a $400.
+      const unitPrice = precioPorUnidad(precioVenta, product.minQuantity)
+      const listUnit = precioPorUnidad(product.price, product.minQuantity)
       subtotal = round2(subtotal + round2(unitPrice * item.quantity))
 
       const ivaRate = product.ivaRate ?? globalIva
@@ -317,13 +324,13 @@ router.post('/', limits.checkout, async (req, res, next) => {
         sku: product.sku || null,
         unit: product.unit,
         presentation: product.presentation || null,
-        // price guarda el precio unitario ya descontado: es lo que se cobró.
+        // price guarda el precio por unidad ya descontado: es lo que se cobró.
         price: unitPrice,
         quantity: item.quantity,
         ivaRate,
         // Y el descuento, para que la factura pueda emitir <descuento>.
         discountPct: pct,
-        listPrice: Number(product.price),
+        listPrice: listUnit,
         sriCode: product.sriCode || null,
       })
     }

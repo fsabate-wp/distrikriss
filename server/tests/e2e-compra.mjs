@@ -19,7 +19,7 @@ const {
   validateDeliveryDay,
   reserveSlot,
 } = await import('../src/lib/delivery.js')
-const { precioConDescuento, respetaPaso, round2 } = await import('../src/lib/precios.js')
+const { precioConDescuento, precioPorUnidad, respetaPaso, round2 } = await import('../src/lib/precios.js')
 
 let fallos = 0
 let n = 0
@@ -127,12 +127,15 @@ async function main() {
   check('la fecha de mañana es válida para la zona', esDiaValido.ok, JSON.stringify(esDiaValido))
 
   async function crearPedido({ items, slotId = 'e2e-tarde', code, status = 'PENDING' }) {
-    const subtotal = round2(
-      items.reduce((acc, it) => {
-        const p = it.productId === papa.id ? papa : it.productId === arroz.id ? arroz : lenteja
-        return acc + round2(precioConDescuento(p.price, p.discount) * it.quantity)
-      }, 0),
-    )
+    // Misma regla que el servidor: el precio del catálogo es el de la unidad
+    // mínima (la bandeja), y la línea se cobra con el precio por unidad de
+    // medida. Si el test usara el precio de la bandeja, estaría comprobando una
+    // regla que ya no existe.
+    const unitario = (p) => precioPorUnidad(precioConDescuento(p.price, p.discount), p.minQuantity)
+    const subtotal = round2(items.reduce((acc, it) => {
+      const p = it.productId === papa.id ? papa : it.productId === arroz.id ? arroz : lenteja
+      return acc + round2(unitario(p) * it.quantity)
+    }, 0))
     return prisma.order.create({
       data: {
         code,
@@ -155,11 +158,11 @@ async function main() {
               productId: p.id,
               name: p.name,
               unit: p.unit,
-              price: precioConDescuento(p.price, p.discount),
+              price: unitario(p),
               quantity: it.quantity,
               ivaRate: 15,
               discountPct: p.discount,
-              listPrice: p.price,
+              listPrice: precioPorUnidad(p.price, p.minQuantity),
             }
           }),
         },

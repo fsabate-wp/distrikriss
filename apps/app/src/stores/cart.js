@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { discountedPrice } from '../utils/format.js'
+import { discountedPrice, precioPorUnidad } from '../utils/format.js'
 
 const STORAGE_KEY = 'distrikriss-cart'
 
@@ -8,11 +8,20 @@ function loadCart() {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
     return raw
       .filter((i) => i && i.productId)
-      .map((i) => ({
-        ...i,
-        price: Number(i.price) || 0,
-        quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
-      }))
+      .map((i) => {
+        const price = Number(i.price) || 0
+        const legacy = i.salePrice == null
+        return {
+          ...i,
+          // Los carritos guardados antes de este cambio tenían el precio de la
+          // bandeja en `price`. Se convierte a precio por unidad para que el
+          // total no salga multiplicado por el peso del empaque.
+          price: legacy ? precioPorUnidad(price, i.minQuantity) : price,
+          // salePrice es el precio de la bandeja, el que se le enseña al cliente.
+          salePrice: legacy ? price : Number(i.salePrice),
+          quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
+        }
+      })
   } catch {
     return []
   }
@@ -95,7 +104,13 @@ export const useCartStore = defineStore('cart', {
           presentation: product.presentation || null,
           minQuantity: minQ,
           stepQuantity: step,
-          price: discountedPrice(product.price, product.discount),
+          // price es el precio POR UNIDAD, que es lo que se multiplica por la
+          // cantidad. El catálogo guarda el precio de la bandeja, así que una
+          // bandeja de 400 g a $1 tiene que guardarse como 0.0025.
+          price: precioPorUnidad(discountedPrice(product.price, product.discount), minQ),
+          // salePrice es el precio de la bandeja, el que se enseña al cliente.
+          // Sin él, un producto a granel aparecería con "$0.00 / g".
+          salePrice: discountedPrice(product.price, product.discount),
           imageUrl: product.imageUrl || null,
           quantity: qty,
         })
