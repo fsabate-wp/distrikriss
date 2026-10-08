@@ -23,6 +23,10 @@ carrito muestra una cifra y el pedido cobra otra.
 El servidor **nunca** toma el precio del cliente: siempre lo lee del catálogo y
 lo calcula. El carrito guarda un precio para mostrarlo, pero es informativo.
 
+El precio que ve el cliente se acompaña siempre de **"IVA incluido"**, porque en
+Ecuador el precio mostrado al consumidor es el final. Cuando hay descuento, se dice
+también cuánto se ahorra: el dato ya estaba en la tarjeta, solo se tachaba.
+
 ## Carrito
 
 Persiste en `localStorage` bajo `distrikriss-cart`. Al abrir el checkout se
@@ -37,6 +41,62 @@ reconcilia contra el catálogo (`reconcileCart` en `CheckoutView.vue`):
 Sin esta reconciliación, el cliente veía el total del carrito y el servidor
 cobraba el precio nuevo: un pedido pagado de más o de menos según cuándo se
 miró.
+
+El aviso de esta reconciliación se muestra **en amarillo, no como error**: el
+pedido sigue siendo válido, es información que el cliente debe ver antes de
+confirmar.
+
+### Mínimo de pedido
+
+`CartDrawer` muestra una barra de progreso con lo que falta para alcanzar
+`Settings.minOrderAmount`. Avisar en el carrito, en lugar de solo al final del
+checkout, sube el ticket medio sin cambiar nada del proceso: el mismo cliente
+compra igual, solo que más cosas.
+
+## Búsqueda
+
+`GET /api/catalog/products?search=` resuelve lo que la gente escribe de verdad
+en Ecuador: `papa`, `PAPA` y `pápá` encuentran el mismo producto.
+
+- El filtrado usa SQL con `~*` y un patrón que cubre cada vocal con y sin tilde
+  (`patronSql` en `server/src/lib/search.js`). `contains` de Prisma resuelve
+  mayúsculas pero no tildes, que es justo el caso que más falla.
+- Todo va parametrizado por `Prisma.sql`: el texto del usuario nunca se
+  concatena en la consulta.
+- Se exige que **todos** los términos aparezcan, y cada uno puede estar en el
+  nombre, la descripción, la presentación o el SKU.
+- El orden por defecto es **relevancia**: gana el nombre exacto, luego el
+  prefijo, luego la coincidencia dentro del nombre. Es lo que espera quien
+  escribe.
+- Un término de una sola letra se descarta: devolvería medio catálogo.
+- **Sin resultados se ofrecen alternativas** de la misma categoría, en lugar de
+  una página muerta. Una búsqueda sin resultados es el final del embudo.
+
+La coincidencia es por subcadena: "papa" encuentra "Papa amarilla", pero buscar
+el plural "papas" de un producto llamado "Papa" no coincide. No se hace
+ stemming ni sinónimos.
+
+## Recompra: "pedir lo de siempre"
+
+`GET /api/orders/repeat/last` devuelve los productos del último pedido en un
+estado válido, con la cantidad que se pidió entonces. Para una tienda de
+alimentación la recompra es la vía más barata a facturar.
+
+Reglas:
+
+- Solo considera pedidos `CONFIRMED`, `PREPARING`, `OUT_FOR_DELIVERY` o
+  `DELIVERED`. Un pedido `CANCELLED` no es historial que haya que repetir.
+- Filtra contra el catálogo actual: los productos desactivados no se ofrecen y
+  se listan aparte en `missing`, para poder avisar.
+- Informa el **precio vigente** (`currentPrice`) junto al del pedido anterior
+  (`lastPrice`), y activa `priceChanged` si difieren. El precio que se cobra lo
+  pone siempre el servidor.
+- `stock` es el disponible real en ese momento. El cliente acota con él antes de
+  añadir, porque entre la respuesta y el clic puede haber caído.
+
+`cart.addMany` reintenta producto por producto con las mismas reglas de `add()`
+(mínimo, paso, unidades) y devuelve `{ agregados, omitidos, priceChanged }`. Es
+preferible volver a pedir la mitad de las cosas que no poder repetir nada.
 
 ## Checkout: qué valida el servidor
 
@@ -153,8 +213,8 @@ declaraba descuento cero.
 ## Pruebas
 
 ```bash
-npm test                                  # 100 unitarias
-npm run test:e2e                          # 62 comprobaciones contra PostgreSQL
+npm test                                  # 116 unitarias
+npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 
 | Archivo | Qué cubre |
@@ -163,7 +223,15 @@ npm run test:e2e                          # 62 comprobaciones contra PostgreSQL
 | `tests/delivery.test.js` | Fechas, días de entrega, capacidad, antelación |
 | `tests/e2e-compra.mjs` | Sobreventa, stock, numeración, totales reales |
 | `tests/e2e-facturacion.mjs` | XML, claves de acceso, reconciliación |
+| `tests/e2e-geolocalizacion.mjs` | Zonas, polígonos, cobertura |
+| `tests/e2e-ecommerce.mjs` | RIDE del cliente, aislamiento, recompra, búsqueda |
+| `tests/http-geolocalizacion.mjs` | Endpoints de cobertura sobre HTTP |
 
 `e2e-compra.mjs` incluye las pruebas de concurrencia que no pueden simularse con
 mocks: cuatro pedidos simultáneos sobre una plaza, seis pedidos sobre las últimas
 unidades, y cincuenta códigos a la vez.
+
+`e2e-ecommerce.mjs` levanta el servidor real y verifica, entre otras cosas, que
+un cliente no puede ver el comprobante de otro. Limpia al principio los datos
+que dejaron corridas interrumpidas: las zonas se resuelven por polígono y una
+zona vieja haría fallar el horario de la prueba.

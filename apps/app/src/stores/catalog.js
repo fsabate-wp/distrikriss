@@ -6,10 +6,11 @@ export const useCatalogStore = defineStore('catalog', {
     categories: [],
     products: [],
     featured: [],
+    suggestions: [],
     loading: false,
     category: null,
     search: '',
-    sort: 'recent',
+    sort: 'relevancia',
   }),
   actions: {
     async loadCategories() {
@@ -39,8 +40,12 @@ export const useCatalogStore = defineStore('catalog', {
         }
         const data = await api.get('/api/catalog/products', query)
         this.products = data.products
+        // Alternativas para cuando la búsqueda no encuentra nada. El servidor
+        // solo las devuelve en ese caso, así que no hay coste extra.
+        this.suggestions = data.suggestions || []
       } catch {
         this.products = []
+        this.suggestions = []
       } finally {
         this.loading = false
       }

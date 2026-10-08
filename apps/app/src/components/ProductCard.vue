@@ -7,6 +7,7 @@
         <span v-if="product.featured" class="featured-badge">★ Destacado</span>
         <span v-if="hasDiscount" class="discount-badge">{{ discount }}%</span>
         <span v-if="isOutOfStock" class="outofstock-badge">Sin stock</span>
+        <span v-else-if="lowStock" class="lowstock-badge">Últimas {{ formatQty(lowStock) }}</span>
       </div>
       <div class="product-body">
         <h3 class="product-name">{{ product.name }}</h3>
@@ -21,6 +22,13 @@
           <p class="product-price">{{ money(finalPrice) }} <small class="price-suffix">/ {{ unitLabel }}</small></p>
           <p v-if="hasDiscount" class="product-old-price">{{ money(product.price) }}</p>
         </div>
+        <!--
+          El precio del catálogo ya incluye IVA y así se cobra en el servidor, pero
+          no se decía. En Ecuador el precio mostrado al consumidor debe ser el
+          final: decirlo evita la discrepancia en caja y la llamada de reclamo.
+        -->
+        <p v-if="hasDiscount" class="savings">Ahorras {{ money(savings) }} ({{ discount }}%)</p>
+        <p class="iva-note">IVA incluido</p>
       </div>
     </router-link>
     <button class="add-btn" :disabled="storeClosed() || isOutOfStock" @click="addToCart" aria-label="Agregar al carrito">
@@ -42,7 +50,14 @@ const settings = useSettingsStore()
 const discount = computed(() => Number(props.product.discount) || 0)
 const hasDiscount = computed(() => discount.value > 0 && discount.value < 100)
 const finalPrice = computed(() => discountedPrice(props.product.price, props.product.discount))
+const savings = computed(() => Math.max(0, (Number(props.product.price) || 0) - finalPrice.value))
 const isOutOfStock = computed(() => Number(props.product.stock) === 0)
+/** Stock limitado y casi agotado: urges a decidir antes de que se acabe. */
+const lowStock = computed(() => {
+  const s = Number(props.product.stock)
+  if (!Number.isFinite(s) || s <= 0) return 0
+  return s <= 10 ? s : 0
+})
 const unitLabel = computed(() => {
   const u = (props.product.unit || '').toLowerCase()
   if (u === 'kilo') return 'kg'
@@ -143,6 +158,33 @@ function addToCart() {
   border-radius: 50px;
   box-shadow: var(--shadow);
   letter-spacing: 0.3px;
+}
+
+.lowstock-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: rgba(255, 167, 38, 0.95);
+  color: #3e2000;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
+  letter-spacing: 0.3px;
+}
+
+.savings {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #2e7d32;
+  margin-top: 3px;
+}
+
+.iva-note {
+  font-size: 0.7rem;
+  color: var(--gray);
+  margin-top: 3px;
 }
 
 .product-img img {

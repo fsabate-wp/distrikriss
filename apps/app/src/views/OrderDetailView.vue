@@ -61,6 +61,43 @@
             <p v-if="order.notes" class="detail-line"><strong>Notas:</strong> {{ order.notes }}</p>
           </div>
 
+          <div v-if="invoice" class="detail-card invoice-card" :class="`inv-${invoice.authorized ? 'ok' : 'pending'}`">
+            <h2>Comprobante</h2>
+            <p v-if="invoice.authorized">
+              <strong>{{ invoice.number }}</strong>
+              <span class="badge badge-authorized">Autorizada</span>
+            </p>
+            <p v-else>
+              <strong>Factura en proceso</strong>
+              <span class="badge badge-pending">{{ invoice.statusLabel }}</span>
+            </p>
+
+            <template v-if="invoice.authorized">
+              <p class="detail-line"><strong>Clave de acceso:</strong></p>
+              <p class="mono-key">{{ invoice.accessKey }}</p>
+              <p class="detail-line"><strong>Nro. autorización:</strong> {{ invoice.authorizationNumber }}</p>
+              <p class="detail-line">
+                <strong>Fecha:</strong> {{ invoice.authorizationDate ? formatDateTime(invoice.authorizationDate) : '—' }}
+              </p>
+              <p v-if="invoice.environment !== 1" class="detail-line test-note">
+                Este comprobante se emitió en ambiente de pruebas y no tiene validez tributaria.
+              </p>
+              <button class="btn btn-primary btn-sm" :disabled="downloading" @click="downloadRide">
+                {{ downloading ? 'Generando…' : 'Descargar RIDE (PDF)' }}
+              </button>
+              <p class="muted small-note">
+                La RIDE es el comprobante que necesitas para deducir IVA. Guárdala.
+              </p>
+            </template>
+
+            <template v-else>
+              <p class="detail-line muted">{{ invoice.message }}</p>
+              <p v-if="order.billingType === 'FACTURA'" class="muted small-note">
+                Tu pedido no se ve afectado. Te avisaremos cuando el comprobante esté listo.
+              </p>
+            </template>
+          </div>
+
           <div class="detail-card">
             <h2>Seguimiento</h2>
             <div class="timeline">
@@ -99,15 +136,35 @@ function formatQty(v) {
 const route = useRoute()
 const settings = useSettingsStore()
 const order = ref(null)
+const invoice = ref(null)
 const loading = ref(true)
+const downloading = ref(false)
 
 async function load() {
   loading.value = true
   try {
     const data = await api.get(`/api/orders/${route.params.id}`)
     order.value = data.order
+    // El comprobante va aparte: la lista no lo trae para no cargar datos de más.
+    try {
+      const inv = await api.get(`/api/orders/${route.params.id}/invoice`)
+      invoice.value = inv.invoice
+    } catch {
+      invoice.value = null
+    }
   } finally {
     loading.value = false
+  }
+}
+
+async function downloadRide() {
+  downloading.value = true
+  try {
+    await api.download(`/api/orders/${route.params.id}/ride`, `${invoice.value.number}.pdf`)
+  } catch (err) {
+    alert(err.message)
+  } finally {
+    downloading.value = false
   }
 }
 
@@ -228,6 +285,52 @@ onMounted(async () => {
 
 .billing-info .sub-title {
   margin-top: 0;
+}
+
+.invoice-card {
+  border-left: 3px solid var(--green-mid);
+}
+
+.invoice-card.inv-pending {
+  border-left-color: #ffa000;
+}
+
+.invoice-card p {
+  margin-bottom: 6px;
+}
+
+.mono-key {
+  font-family: monospace;
+  font-size: 0.74rem;
+  letter-spacing: 0.3px;
+  background: var(--gray-light);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  word-break: break-all;
+  margin: 0 0 8px;
+}
+
+.small-note {
+  font-size: 0.76rem;
+  margin-top: 8px;
+}
+
+.test-note {
+  color: #e65100;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-authorized {
+  background: #e8f5e9;
+  color: #1b5e20;
+  margin-left: 8px;
+}
+
+.badge-pending {
+  background: #fff3e0;
+  color: #e65100;
+  margin-left: 8px;
 }
 
 .bank-info {

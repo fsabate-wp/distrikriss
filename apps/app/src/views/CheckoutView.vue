@@ -173,10 +173,11 @@
               <span>{{ money(item.price * item.quantity) }}</span>
             </div>
           </div>
-          <div class="summary-row"><span>Subtotal</span><span>{{ money(cart.subtotal) }}</span></div>
+          <div class="summary-row"><span>Subtotal <small class="summary-iva">IVA incluido</small></span><span>{{ money(cart.subtotal) }}</span></div>
           <div class="summary-row"><span>Envío</span><span>{{ money(estimatedFee) }}</span></div>
           <div class="summary-row total"><span>Total</span><span>{{ money(cart.subtotal + estimatedFee) }}</span></div>
 
+          <p v-if="aviso" class="aviso-msg">{{ aviso }}</p>
           <p v-if="error" class="error-msg">{{ error }}</p>
           <button class="btn btn-primary btn-block" :disabled="!canSubmit || submitting" @click="submit">
             {{ submitting ? 'Creando pedido…' : 'Confirmar pedido' }}
@@ -238,6 +239,7 @@ const inZone = computed(() => {
   return deliveryCheck.value.withinZone === true
 })
 const error = ref('')
+const aviso = ref('')
 const submitting = ref(false)
 const billing = ref({ type: 'CONSUMO_FINAL', idType: 'RUC', id: '', name: '', address: '', email: '' })
 
@@ -556,7 +558,10 @@ onMounted(async () => {
     }
     if (quitados.length) partes.push(`${quitados.length} producto(s) ya no están disponibles`)
     if (ajustes.length) partes.push(`se ajustaron las cantidades de ${ajustes.length} producto(s)`)
-    error.value = `Actualizamos tu carrito: ${partes.join('; ')}.`
+    // Aviso, no error: el pedido sigue siendo válido. Un cambio de precio o un
+    // ajuste de cantidad es información que el cliente necesita ver antes de
+    // confirmar, no un fallo.
+    aviso.value = `Actualizamos tu carrito: ${partes.join('; ')}.`
   }
   loading.value = false
 })
@@ -755,6 +760,22 @@ onMounted(async () => {
   border-top: 1px solid var(--gray-mid);
   padding-top: 12px;
   margin-top: 4px;
+}
+
+.summary-iva {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--gray);
+}
+
+.aviso-msg {
+  background: #FFF8E1;
+  border: 1px solid #FFE082;
+  color: #7a5900;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
 }
 
 .submit-hint {

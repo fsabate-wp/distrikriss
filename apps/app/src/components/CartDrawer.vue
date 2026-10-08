@@ -39,9 +39,30 @@
 
       <div v-if="cart.items.length > 0" class="drawer-footer">
         <div class="cart-summary">
-          <span>Subtotal</span>
+          <span>Subtotal <small class="summary-iva">IVA incluido</small></span>
           <strong>{{ money(cart.subtotal) }}</strong>
         </div>
+
+        <!--
+          Aviso del pedido mínimo en el carrito, no solo al final del checkout.
+          Decirle cuánto falta y por cuánto puede completarlo sube el ticket medio
+          sin cambiar nada del proceso: el mismo cliente va a seguir comprando,
+          solo que más cosas.
+        -->
+        <div v-if="minOrder > 0" class="min-order" :class="{ 'is-met': faltaMinimo <= 0 }">
+          <template v-if="faltaMinimo > 0">
+            <div class="min-order-bar">
+              <div class="min-order-fill" :style="{ width: minProgress + '%' }"></div>
+            </div>
+            <p class="min-order-text">
+              Te faltan <strong>{{ money(faltaMinimo) }}</strong> para alcanzar el mínimo de pedido
+            </p>
+          </template>
+          <p v-else class="min-order-text done">
+            ¡Alcanzaste el mínimo de pedido!
+          </p>
+        </div>
+
         <router-link v-if="!auth.isAuthed" to="/registro" class="btn btn-primary btn-block" @click="$emit('close')">
           Regístrate para continuar
         </router-link>
@@ -58,6 +79,8 @@
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart.js'
 import { useAuthStore } from '../stores/auth.js'
+import { useSettingsStore } from '../stores/settings.js'
+import { computed } from 'vue'
 import { money } from '../utils/format.js'
 
 function formatQty(v) {
@@ -69,7 +92,28 @@ defineProps({ open: Boolean })
 const emit = defineEmits(['close'])
 const cart = useCartStore()
 const auth = useAuthStore()
+const settings = useSettingsStore()
 const router = useRouter()
+
+/**
+ * Mínimo de pedido vigente.
+ *
+ * Cada zona de cobertura puede tener el suyo, y el del carrito es el de la zona
+ * elegida. Si la tienda no tiene mínimo configurado (0), no se muestra nada.
+ */
+const minOrder = computed(() => {
+  const s = settings.settings
+  if (!s) return 0
+  const min = Number(s.minOrderAmount)
+  return Number.isFinite(min) && min > 0 ? min : 0
+})
+
+const faltaMinimo = computed(() => Math.max(0, Math.round((minOrder.value - cart.subtotal) * 100) / 100))
+
+const minProgress = computed(() => {
+  if (minOrder.value <= 0) return 0
+  return Math.min(100, Math.round((cart.subtotal / minOrder.value) * 100))
+})
 
 function goHome() {
   router.push({ name: 'home' })
@@ -257,6 +301,41 @@ function goHome() {
 .cart-summary strong {
   font-size: 1.1rem;
   color: var(--green-dark);
+}
+
+.summary-iva {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--gray);
+}
+
+.min-order {
+  margin-bottom: 14px;
+}
+
+.min-order-bar {
+  height: 6px;
+  background: var(--gray-mid);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.min-order-fill {
+  height: 100%;
+  background: var(--green-mid);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.min-order-text {
+  font-size: 0.82rem;
+  color: var(--dark);
+}
+
+.min-order-text.done {
+  color: var(--green-mid);
+  font-weight: 700;
 }
 
 .back-btn {

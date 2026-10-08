@@ -143,5 +143,44 @@ export const useCartStore = defineStore('cart', {
       this.items = []
       this.persist()
     },
+
+    /**
+     * Vuelca varios productos de golpe, usado por "pedir lo de siempre".
+     *
+     * Los productos vienen del endpoint `/api/orders/repeat/last`, que ya los
+     * filtró contra el catálogo actual y trae el stock vigente. Se reintenta uno
+     * por uno con `add()` para respetar las mismas reglas (mínimo, paso,
+     * unidades disponibles) y se reporta qué quedó fuera, en lugar de fallar
+     * entero: es mejor volver a pedir la mitad de las cosas que no poder
+     * repetir nada.
+     *
+     * Devuelve `{ agregados, omitidos, priceChanged }`.
+     */
+    addMany(items) {
+      const omitidos = []
+      let agregados = 0
+      let priceChanged = false
+      for (const item of items || []) {
+        if (item.available === false) {
+          omitidos.push({ name: item.name, motivo: 'agotado' })
+          continue
+        }
+        // Acota al stock que el servidor acaba de reportar: entre la respuesta
+        // y este clic puede haber caído.
+        let cantidad = Number(item.quantity) || Number(item.minQuantity) || 1
+        if (Number.isFinite(item.stock) && item.stock >= 0) {
+          cantidad = Math.min(cantidad, Math.max(item.stock, 0))
+          if (cantidad < Number(item.minQuantity)) {
+            omitidos.push({ name: item.name, motivo: 'queda poco stock' })
+            continue
+          }
+        }
+        const ok = this.add({ ...item, stock: item.stockLimit ?? item.stock }, cantidad)
+        if (ok) agregados += 1
+        else omitidos.push({ name: item.name, motivo: 'no disponible' })
+        if (Number(item.lastPrice) !== Number(item.currentPrice)) priceChanged = true
+      }
+      return { agregados, omitidos, priceChanged }
+    },
   },
 })

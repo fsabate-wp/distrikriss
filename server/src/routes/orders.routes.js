@@ -15,6 +15,9 @@ import { sendToAdmins, sendToUser } from '../lib/push.js'
 import { sendWhatsApp, getStorePhone } from '../lib/whatsapp.js'
 import { validateIdentifier } from '../lib/sri/ruc.js'
 import { isValidIvaRate } from '../lib/sri/xml.js'
+import { renderRide } from '../lib/sri/ride.js'
+import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
+import { INVOICE_STATUS_LABELS, invoiceMessageFor } from '../lib/sri/labels.js'
 import { limits } from '../middleware/auth.js'
 
 import * as precios from '../lib/precios.js'
@@ -460,6 +463,163 @@ router.get('/', async (req, res, next) => {
       include: orderInclude,
     })
     res.json({ orders: orders.map(withTotals) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * RIDE del comprobante del cliente.
+ *
+ * En Ecuador la RIDE es lo que permite deducir IVA: sin ella, una factura
+ * autorizada no sirve para nada al comprador. El cliente no tenía forma de
+ * obtenerla, solo el administrador.
+ *
+ * El acceso se filtra por `userId`: cada quien descarga la suya.
+ */
+router.get('/:id/ride', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findFirst({
+      where: { orderId: req.params.id },
+      include: { order: { include: { items: true } } },
+    })
+    if (!invoice || invoice.order.userId !== req.user.id) {
+      return res.status(404).json({ error: 'Comprobante no encontrado' })
+    }
+    if (invoice.status !== 'AUTHORIZED') {
+      return res.status(409).json({
+        error: 'Tu comprobante todavía no ha sido autorizado por el SRI',
+        status: invoice.status,
+      })
+    }
+
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!settings) return res.status(500).json({ error: 'Configuración no encontrada' })
+
+    const { lines, totalDiscount } = buildLines(invoice.order, settings)
+    const groups = buildTaxGroups(lines)
+    const totals = computeTotals(lines, totalDiscount)
+    const pdf = await renderRide({ invoice, order: invoice.order, settings, lines, groups, totals })
+
+    const etiqueta = invoice.docType === 'NOTA_CREDITO' ? 'nota-credito' : 'factura'
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${etiqueta}-${invoice.number}.pdf"`)
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(pdf)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Datos del comprobante para mostrarlo en la web sin descargarlo.
+ * No incluye el XML: el cliente ve su número, su clave y su estado.
+ */
+router.get('/:id/invoice', async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findFirst({
+      where: { orderId: req.params.id },
+    })
+    if (!invoice || invoice.orderId !== req.params.id) {
+      return res.status(404).json({ error: 'Comprobante no encontrado' })
+    }
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, userId: req.user.id } })
+    if (!order) return res.status(404).json({ error: 'Comprobante no encontrado' })
+
+    res.json({
+      invoice: {
+        number: invoice.number,
+        accessKey: invoice.accessKey,
+        status: invoice.status,
+        statusLabel: INVOICE_STATUS_LABELS[invoice.status] || invoice.status,
+        docType: invoice.docType,
+        authorized: invoice.status === 'AUTHORIZED',
+        authorizationNumber: invoice.authorizationNumber,
+        authorizationDate: invoice.authorizationDate,
+        total: Number(invoice.totalFiscal),
+        environment: invoice.environment,
+        message: invoiceMessageFor(invoice),
+        // El detalle técnico solo se devuelve al depurar; el cliente recibe el
+        // mensaje en lenguaje llano de arriba.
+        responseMessage: null,
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * "Pedir lo de siempre".
+ *
+ * Devuelve los productos del último pedido entregado o confirmado, con la
+ * cantidad pedida. El cliente que compra cada semana no debería tener que
+ * reconstruir su pedido a mano cada vez: es el camino más corto a repetir
+ * compra, y repetir compra es lo que sostiene un negocio de alimentación.
+ *
+ * Se omiten los productos que ya no existen o están inactivos, para que el
+ * cliente no vea algo que no puede añadir.
+ */
+router.get('/repeat/last', async (req, res, next) => {
+  try {
+    const ultimo = await prisma.order.findFirst({
+      where: {
+        userId: req.user.id,
+        status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'] },
+        status: { not: 'CANCELLED' },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { items: true },
+    })
+    if (!ultimo) return res.json({ available: false })
+
+    const ids = [...new Set(ultimo.items.map((i) => i.productId).filter(Boolean))]
+    const productos = ids.length
+      ? await prisma.product.findMany({ where: { id: { in: ids }, active: true } })
+      : []
+    const porId = new Map(productos.map((p) => [p.id, p]))
+
+    const disponibles = []
+    const caidos = []
+    for (const item of ultimo.items) {
+      const p = item.productId ? porId.get(item.productId) : null
+      if (!p) {
+        caidos.push({ name: item.name })
+        continue
+      }
+      const stock = Number(p.stock)
+      const agotado = stock >= 0 && stock <= 0
+      disponibles.push({
+        productId: p.id,
+        name: p.name,
+        slug: p.slug,
+        unit: p.unit,
+        minQuantity: Number(p.minQuantity) || 1,
+        stepQuantity: Number(p.stepQuantity) || 1,
+        // Se repite lo que pidió, no el precio que tenía: el precio vigente
+        // siempre lo pone el servidor, pero aquí conviene avisar si cambió.
+        lastPrice: Number(item.price),
+        currentPrice: Number(p.price),
+        discount: Number(p.discount) || 0,
+        // Los Decimales de Prisma viajan como cadena por JSON. El cliente los
+        // usa para sumar cantidades, así que se normalizan a número aquí.
+        quantity: Number(item.quantity),
+        available: !agotado,
+        stock: stock,
+        stockLimit: stock >= 0 ? Math.max(0, stock) : null,
+      })
+    }
+
+    res.json({
+      available: disponibles.length > 0,
+      orderCode: ultimo.code,
+      orderDate: ultimo.createdAt,
+      items: disponibles,
+      missing: caidos,
+      // Si algún precio cambió desde el pedido anterior, se avisa en lugar de
+      // cobrar de más o de menos sin que nadie lo note.
+      priceChanged: disponibles.some((i) => i.lastPrice !== i.currentPrice),
+    })
   } catch (err) {
     next(err)
   }

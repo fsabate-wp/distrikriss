@@ -23,6 +23,7 @@
           <input v-model="catalog.search" type="search" placeholder="Buscar producto…" @input="onSearch" />
         </div>
         <select v-model="catalog.sort" class="form-control sort-select" @change="catalog.loadProducts()">
+          <option value="relevancia">Más relevantes</option>
           <option value="recent">Más recientes</option>
           <option value="name">Nombre A-Z</option>
           <option value="price_asc">Precio: menor a mayor</option>
@@ -61,6 +62,17 @@
       <div v-else-if="catalog.products.length === 0" class="empty-state">
         <h3>Sin resultados</h3>
         <p>Prueba con otro término o categoría</p>
+        <!--
+          Una búsqueda sin resultados es el final del embudo. En lugar de una
+          página muerta, se ofrecen productos reales: la persona que escribió
+          "papa" y no lo encuentra seguro sí se va a llevar otra cosa.
+        -->
+        <div v-if="catalog.suggestions.length" class="suggestions">
+          <h4>Tal vez te interese</h4>
+          <div class="products-grid">
+            <ProductCard v-for="p in catalog.suggestions" :key="p.id" :product="p" />
+          </div>
+        </div>
       </div>
 
       <div v-else class="products-grid">

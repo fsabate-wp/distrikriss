@@ -53,9 +53,29 @@ que indica el número de comprobante y enlaza a la nota de crédito.
 
 ## RIDE
 
-`GET /api/admin/invoices/:id/ride` genera el PDF con el QR de la CLAVEACCESO
-autorizada. Sin ella el cliente no puede validar el comprobante ni deducir IVA,
-por lo que un PDF sin autorización se marca explícitamente como no válido.
+La RIDE es lo que permite a una persona o empresa **deducir IVA**. Sin ella la
+factura existe, pero no sirve para nada al comprador, así que el cliente tiene
+su propia vía para obtenerla:
+
+```
+GET /api/orders/:id/invoice   →  datos del comprobante para verlo en la web
+GET /api/orders/:id/ride      →  PDF con el QR de la CLAVEACCESO autorizada
+```
+
+Ambas filtran por `userId`: cada quien descarga la suya y un tercero recibe
+`404`, no un `403` que confirmaría que el pedido existe.
+
+| Situación | Respuesta |
+|---|---|
+| Pedido sin comprobante aún | `404` |
+| Comprobante emitido, no autorizado | `409` con el estado real |
+| Autorizado | `200`, PDF descargable |
+
+Un PDF sin autorización **no se sirve**: un comprobante de prueba en manos de un
+cliente es un problema legal. En su lugar, el cliente ve el estado y un mensaje
+en lenguaje llano (`invoiceMessageFor` en `lib/sri/labels.js`).
+
+`GET /api/admin/invoices/:id/ride` sigue existiendo para el panel.
 
 El dato de autorización vive en `Invoice.authorizationProof` (el campo
 `comprobante` que devuelve el SRI). Es lo que se persiste en la RIDE.
@@ -136,10 +156,13 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 68 pruebas unitarias
-npm run test:e2e                      # 35 comprobaciones contra PostgreSQL
+npm test                              # 116 pruebas unitarias
+npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```
 
 `test:e2e` necesita la base de datos levantada (`docker compose -f
 docker-compose.dev.yml up -d`) y las migraciones aplicadas.
+
+`e2e-ecommerce.mjs` cubre las rutas del cliente: aislamiento entre usuarios en
+la RIDE, los tres estados del comprobante y la descarga del PDF.
