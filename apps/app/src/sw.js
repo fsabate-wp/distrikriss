@@ -1,6 +1,6 @@
 import { precacheAndRoute } from 'workbox-precaching'
 import { registerRoute } from 'workbox-routing'
-import { CacheFirst, NetworkFirst } from 'workbox-strategies'
+import { CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
 
@@ -9,6 +9,20 @@ self.addEventListener('message', (event) => {
 })
 
 precacheAndRoute(self.__WB_MANIFEST)
+
+/**
+ * El catálogo NO se cachea.
+ *
+ * El precio del producto determina lo que se cobra, y un catálogo servido desde
+ * la caché puede enseñar un precio que el servidor ya cambió. Con NetworkFirst
+ * y un timeout de 4 s, un cliente con la conexión lenta terminaba-armando el
+ * carrito con precios viejos y se llevaba un susto en la caja. El servidor
+ * siempre es la fuente, y un fallo de red se muestra como fallo de red.
+ */
+registerRoute(
+  ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/catalog'),
+  new NetworkOnly(),
+)
 
 registerRoute(
   ({ url }) => url.hostname === 'tile.openstreetmap.org',
@@ -21,14 +35,18 @@ registerRoute(
   }),
 )
 
+// El resto de la API sí puede venir de caché un momento, pero nunca la sesión:
+// un `/api/auth/me` cacheado hace que la app crea que hay una sesión viva que el
+// servidor ya no reconoce. Solo GET, para que un POST de pedido jamás se guarde.
 registerRoute(
-  ({ url }) => url.pathname.includes('/api/'),
+  ({ url, request, sameOrigin }) =>
+    sameOrigin && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth') && request.method === 'GET',
   new NetworkFirst({
     cacheName: 'api-cache',
     networkTimeoutSeconds: 4,
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 5 * 60 }),
+      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 }),
     ],
   }),
 )
