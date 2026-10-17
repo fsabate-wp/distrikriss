@@ -7,6 +7,7 @@ import { loadCertificate, signInvoiceXml, certificatePath } from './cert.js'
 import { unsignedSourceFor } from './xades.js'
 import { sendReceipt, awaitAuthorization, queryAuthorization } from './client.js'
 import { identificationTypeFor } from './ruc.js'
+import { pendingRetryWhere } from './retry.js'
 
 export { buildLines, buildTaxGroups, computeTotals, assertReconciled }
 
@@ -554,12 +555,10 @@ export async function issueCreditNote(invoiceId, { reason, actor = null } = {}) 
  */
 export async function retryPendingInvoices({ limit = 20 } = {}) {
   const pending = await prisma.invoice.findMany({
-    where: {
-      status: { in: ['SIGNED', 'RECEIVED', 'FAILED'] },
-      nextRetryAt: { lte: new Date() },
-      retryCount: { lt: config.sri.maxAttempts },
-    },
-    orderBy: { nextRetryAt: 'asc' },
+    where: pendingRetryWhere(),
+    // Los NULL (comprobantes huerfanos) primero: son los que de verdad se
+    // quedaron sin nadie que los empuje.
+    orderBy: { nextRetryAt: { sort: 'asc', nulls: 'first' } },
     take: limit,
   })
 

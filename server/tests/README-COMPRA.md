@@ -299,7 +299,7 @@ su unidad de medida, sin inventar un empaque.
 ## Pruebas
 
 ```bash
-npm test                                  # 177 unitarias
+npm test                                  # 179 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 

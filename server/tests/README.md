@@ -39,6 +39,12 @@ historial auditable del comprobante.
 Solo `RECEIVED`, `SIGNED` y `FAILED` se reintentan solos. Los demás ya tienen
 respuesta definitiva del SRI y reenviar produce el mismo resultado.
 
+El worker también recupera los comprobantes que quedan en esos estados **sin
+`nextRetryAt`**: son los que quedaron huérfanos si el proceso murió justo después
+de firmar o de recibir, antes de fijar el próximo reintento (un despliegue a
+mitad de envío). Antes eran invisibles para el worker, porque `nextRetryAt <=
+ahora` no incluye `NULL`.
+
 ## Anulación
 
 Una factura autorizada **no se puede borrar ni cancelar**. La única vía legal es
@@ -189,7 +195,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 177 pruebas unitarias
+npm test                              # 179 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```
