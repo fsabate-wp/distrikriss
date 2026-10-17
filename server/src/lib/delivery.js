@@ -32,7 +32,6 @@ export async function ensureDefaultZone() {
       deliveryDays: Array.isArray(settings.deliveryDays) ? settings.deliveryDays : [0, 1, 2, 3, 4, 5, 6],
       slots: Array.isArray(settings.slots) ? settings.slots : [],
       deliveryFeeBase: settings.deliveryFeeBase,
-      deliveryFeePerKm: settings.deliveryFeePerKm,
       minOrderAmount: settings.minOrderAmount,
       sortOrder: 0,
     },
@@ -93,10 +92,17 @@ export function areaKm2(polygon) {
   return Math.abs(area / 2)
 }
 
-export function computeDeliveryFee(distanceKm, zone) {
-  const base = Number(zone.deliveryFeeBase) || 0
-  const perKm = Number(zone.deliveryFeePerKm) || 0
-  return round(base + perKm * distanceKm)
+/**
+ * Envio de una zona.
+ *
+ * Es una tarifa plana: no depende de la distancia al pin. El pin lo elige el
+ * cliente en el mapa, asi que cobrar por metro recorrido desde ahi era
+ * falseable (un punto pegado al local pagaba el minimo). Antes se calculaba
+ * como base + perKm * distancia desde la tienda. El campo deliveryFeePerKm se
+ * conserva en la base por compatibilidad, pero ya no entra en el precio.
+ */
+export function computeDeliveryFee(zone) {
+  return round(Number(zone?.deliveryFeeBase) || 0)
 }
 
 export function isDeliveryDay(date, zone) {
@@ -329,7 +335,7 @@ export async function deliveryCheck(lat, lng) {
     }
   }
 
-  const deliveryFee = computeDeliveryFee(distanceKm, zone)
+  const deliveryFee = computeDeliveryFee(zone)
   return {
     withinZone: true,
     zoneId: zone.id,

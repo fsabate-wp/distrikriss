@@ -126,6 +126,10 @@ async function main() {
   check('sigue dentro (solo en la grande)', enCorona.withinZone === true, JSON.stringify(enCorona))
   check('y ahora gana la grande', enCorona.zoneName.includes('Grande'), enCorona.zoneName)
   check('el minimo baja a 10', Number(enCorona.minOrderAmount) === 10, `${enCorona.minOrderAmount}`)
+  // El pin de la corona esta a ~800 m de la tienda, dentro de la zona grande
+  // (base 2). El envio debe seguir siendo 2: si aqui saliera mas caro, bastaria
+  // con marcar un punto mas cercano para pagar menos.
+  check('el envio es plano aunque el pin se aleje', Number(enCorona.deliveryFee) === 2, `${enCorona.deliveryFee}`)
 
   console.log('\n=== 3. Un punto fuera de todas las zonas ===')
   const fuera = { lat: TIENDA.lat + 0.02, lng: TIENDA.lng + 0.02 } // ~3,5 km

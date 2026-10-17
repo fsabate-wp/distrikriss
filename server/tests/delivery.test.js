@@ -74,10 +74,14 @@ test('isDeliveryDay lee el dia de la semana de la fecha', () => {
   assert.equal(isDeliveryDay(new Date(2026, 9, 5), {}), false)
 })
 
-test('el envio se calcula con base mas distancia', () => {
-  assert.equal(computeDeliveryFee(0, zone), 2)
-  assert.equal(computeDeliveryFee(2, zone), 3)
-  assert.equal(computeDeliveryFee(10, zone), 7)
+test('el envio es una tarifa plana por zona, no depende de la distancia', () => {
+  // La zona de prueba trae deliveryFeePerKm a proposito: debe ignorarse. El pin
+  // lo elige el cliente en el mapa, asi que cobrar mas por alejarse seria
+  // falseable (bastaba con marcar un punto pegado al local).
+  assert.equal(computeDeliveryFee(zone), 2)
+  assert.equal(computeDeliveryFee({ deliveryFeeBase: 0, deliveryFeePerKm: 9 }), 0)
+  assert.equal(computeDeliveryFee({}), 0)
+  assert.equal(computeDeliveryFee(null), 0)
 })
 
 test('la capacidad del horario se lee de la zona', () => {

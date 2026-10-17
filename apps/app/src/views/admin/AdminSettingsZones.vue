@@ -36,7 +36,7 @@
               {{ z.name }}
               <span v-if="!z.enabled" class="zone-disabled">inactiva</span>
             </span>
-            <span class="zone-meta">{{ z.slots.length }} franjas · ${{ z.deliveryFeeBase }} + ${{ z.deliveryFeePerKm }}/km</span>
+            <span class="zone-meta">{{ z.slots.length }} franjas · envío ${{ z.deliveryFeeBase }}</span>
           </button>
           <p v-if="zones.length === 0" class="muted zones-empty">Aún no hay zonas. Crea la primera dibujando en el mapa.</p>
         </div>
@@ -59,12 +59,8 @@
                   </div>
                 </div>
                 <div class="form-group">
-                  <label>Costo base de envío ($)</label>
+                  <label>Costo de envío ($)</label>
                   <input v-model.number="editing.deliveryFeeBase" type="number" step="0.01" min="0" class="form-control" />
-                </div>
-                <div class="form-group">
-                  <label>Costo por km ($)</label>
-                  <input v-model.number="editing.deliveryFeePerKm" type="number" step="0.01" min="0" class="form-control" />
                 </div>
                 <div class="form-group">
                   <label>Pedido mínimo ($)</label>
@@ -191,7 +187,6 @@ function emptyZone() {
       { id: 'afternoon', label: 'Tarde (13:00 - 18:00)', start: '13:00', end: '18:00', capacity: 20 },
     ],
     deliveryFeeBase: 1.5,
-    deliveryFeePerKm: 0.25,
     minOrderAmount: 5,
     sortOrder: zones.value.length,
     polygon: null,
@@ -359,7 +354,6 @@ function normalizePayload() {
     deliveryDays: editing.value.deliveryDays,
     slots: editing.value.slots,
     deliveryFeeBase: Number(editing.value.deliveryFeeBase) || 0,
-    deliveryFeePerKm: Number(editing.value.deliveryFeePerKm) || 0,
     minOrderAmount: Number(editing.value.minOrderAmount) || 0,
     sortOrder: Number(editing.value.sortOrder) || 0,
   }

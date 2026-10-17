@@ -162,7 +162,10 @@ En este orden (`routes/orders.routes.js`):
 1. **Tienda abierta** (`requireStoreOpen` en el catálogo y el checkout).
 2. **Dirección**: debe pertenecer al usuario si es guardada, o venir completa si
    es nueva.
-3. **Zona de entrega**: la dirección debe caer dentro de una zona habilitada.
+3. **Zona de entrega**: la dirección debe caer dentro de una zona habilitada. El
+   envío es una **tarifa plana de la zona** (`deliveryFeeBase`): no depende de la
+   distancia al pin. El pin lo elige el cliente en el mapa, así que cobrar por
+   acercarse o alejarse era falseable.
 4. **Fecha de entrega**: día con entregas programadas, no pasado, dentro del
    límite de anticipación (30 días) y antes de la hora de corte si es hoy.
 5. **Horario**: debe existir en la zona y tener plaza. La reserva definitiva se

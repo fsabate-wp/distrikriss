@@ -1018,7 +1018,6 @@ const zoneSchema = z.object({
     }),
   ),
   deliveryFeeBase: z.number().min(0),
-  deliveryFeePerKm: z.number().min(0),
   minOrderAmount: z.number().min(0),
   sortOrder: z.number().int().min(0).optional(),
 })
@@ -1033,7 +1032,6 @@ function toZoneResponse(z) {
     deliveryDays: z.deliveryDays,
     slots: z.slots,
     deliveryFeeBase: toNumber(z.deliveryFeeBase),
-    deliveryFeePerKm: toNumber(z.deliveryFeePerKm),
     minOrderAmount: toNumber(z.minOrderAmount),
     sortOrder: z.sortOrder,
     createdAt: z.createdAt,
@@ -1074,7 +1072,6 @@ router.post('/zones', async (req, res, next) => {
         deliveryDays: data.deliveryDays,
         slots: data.slots,
         deliveryFeeBase: data.deliveryFeeBase,
-        deliveryFeePerKm: data.deliveryFeePerKm,
         minOrderAmount: data.minOrderAmount,
         sortOrder: data.sortOrder ?? 0,
       },
