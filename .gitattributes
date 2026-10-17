@@ -1,0 +1,9 @@
+# Los scripts de shell tienen que viajar con LF. En Windows con core.autocrlf
+# git los reescribiria a CRLF y el shebang "#!/bin/sh\r" rompe el arranque del
+# contenedor (el entrypoint no se encontraria). El Dockerfile copia el archivo
+# tal cual, asi que el salto de linea importa.
+*.sh text eol=lf
+
+# Los Dockerfile tambien se rompen con CRLF en las continuaciones de linea.
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf

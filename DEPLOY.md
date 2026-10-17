@@ -24,6 +24,23 @@ servidor cobra bien pero la web sigue multiplicando por los gramos.
 El `entrypoint.sh` del servidor aplica las migraciones solo al arrancar, asi que
 la reconstruccion del servidor basta para `prisma migrate deploy`.
 
+### Si una migracion falla
+
+El arranque **se detiene** (el contenedor no levanta) y no toca los datos. Antes
+caia a `db push --accept-data-loss`, que "arreglaba" el esquema borrando columnas
+y tablas con informacion, y ademas arrancaba la API aunque el push tambien
+fallara: un fallo de despliegue se convertia en perdida silenciosa de datos.
+
+Para ver que pasa:
+
+```bash
+npx prisma migrate status --schema=server/prisma/schema.prisma
+```
+
+Con el estado a la vista se resuelve a mano (una migracion a medias se marca con
+`prisma migrate resolve`, pero solo despues de mirar que tabla falta). Nunca se
+ejecuta `db push --accept-data-loss` automaticamente en produccion.
+
 ## Como comprobar que quedo desplegado
 
 Las migraciones son lo primero que falla si se olvidan:

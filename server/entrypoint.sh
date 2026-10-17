@@ -7,10 +7,9 @@ SCHEMA=server/prisma/schema.prisma
 # Esperar a la base de datos.
 #
 # Sin esto, si la base todavía no está lista en el momento de arrancar,
-# `migrate deploy` falla y el script cae al `db push --accept-data-loss` de
-# abajo, que puede borrar datos para "arreglar" un problema que era solo una
-# conexión tardía. Es la causa más frecuente de un despliegue que parece bien y
-# deja el esquema en cualquier cosa.
+# `migrate deploy` falla y el arranque se detiene, aunque el problema fuera solo
+# una conexión tardía. Es la causa más frecuente de un despliegue que parece bien
+# y no lo está.
 # ---------------------------------------------------------------------------
 echo "-> esperando a la base de datos"
 node -e '
@@ -38,17 +37,29 @@ const p = new PrismaClient();
   exit 1
 }
 
-echo "-> resolviendo migraciones fallidas previas (si existen)"
-npx prisma migrate resolve --applied "20260730000000_init" --schema="$SCHEMA" 2>/dev/null || true
-
+# ---------------------------------------------------------------------------
+# Aplicar las migraciones.
+#
+# Antes, si `migrate deploy` fallaba por cualquier motivo (una conexion a medias,
+# un drift, una migracion a medio aplicar) el script caia a
+# `db push --accept-data-loss`, que "arregla" el esquema BORRANDO columnas y
+# tablas con datos, y ademas arrancaba la API aunque el push tambien fallara. Un
+# fallo de despliegue se convertia en perdida silenciosa de datos.
+#
+# Ahora un fallo detiene el arranque: es preferible que el contenedor no levante
+# y alguien mire las migraciones, a que la tienda siga vendiendo con el esquema a
+# medias o con datos borrados. Para inspeccionar el estado:
+#   npx prisma migrate status --schema=server/prisma/schema.prisma
+#
+# Tampoco se marca la migracion inicial como aplicada a ciegas: eso hacia que en
+# una base nueva `migrate deploy` saltara el init y fallara con las siguientes.
+# ---------------------------------------------------------------------------
 echo "-> aplicando migraciones de Prisma"
 if ! npx prisma migrate deploy --schema="$SCHEMA"; then
-  echo "-> AVISO: migrate deploy fallo. Intentando db push con --accept-data-loss."
-  echo "-> AVISO: revisar el esquema antes de confiar en esta base."
-  npx prisma db push --accept-data-loss --schema="$SCHEMA" || {
-    echo "-> ERROR: db push tambien fallo. El servidor arrancara igual, pero con el"
-    echo "->        esquema que hubiera. Revisa las migraciones antes de abrir la tienda."
-  }
+  echo "-> ERROR: 'migrate deploy' fallo. No se arranca con un esquema desconocido."
+  echo "->        Revisa: npx prisma migrate status --schema=$SCHEMA"
+  echo "->        NO se ejecuta 'db push --accept-data-loss': borraria datos."
+  exit 1
 fi
 
 echo "-> sembrando datos base (idempotente)"
