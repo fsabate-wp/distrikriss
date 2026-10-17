@@ -1,4 +1,4 @@
-import { verifyAccessToken } from '../lib/jwt.js'
+import { verifyAccessToken, verifyStepUpToken } from '../lib/jwt.js'
 import { prisma } from '../lib/prisma.js'
 import { isOriginAllowed, requestIp } from '../config.js'
 
@@ -96,24 +96,30 @@ export function requireTrustedOrigin(req, res, next) {
  * Autenticación reforzada para acciones fiscales sensibles (cambiar RUC,
  * ambiente, certificado, emitir notas de crédito).
  *
- * Exige que el administrador vuelva a escribir su contraseña en los últimos
- * minutos. Sin esto, un token robado basta para redirigir toda la facturación
- * del negocio hacia otro ambiente o RUC.
+ * Exige que el administrador vuelva a escribir su contraseña, que el endpoint
+ * /sri/step-up canjea por un ticket firmado. El ticket es la única prueba que
+ * vale: la cabecera X-SRI-Verified-At se ignora porque la pone el cliente, y un
+ * atacante con un token robado la falsificaba para saltarse la confirmación.
+ *
+ * `stepUpGrant` devuelve el ticket si es válido para este usuario, o null. Un
+ * ticket ausente, falsificado, caducado o emitido para otro usuario no vale.
  */
-export const STEP_UP_WINDOW_MS = 10 * 60 * 1000
+export function stepUpGrant(req) {
+  const ticket = req.get?.('x-sri-step-up')
+  if (!ticket) return null
+  try {
+    const payload = verifyStepUpToken(ticket)
+    if (String(payload.sub) !== String(req.user?.id)) return null
+    return payload
+  } catch {
+    return null
+  }
+}
 
 export function requireStepUp(req, res, next) {
-  const verifiedAt = Number(req.get?.('x-sri-verified-at'))
-  const nonce = req.get?.('x-sri-step-up')
-  if (!verifiedAt || !nonce) {
+  if (!stepUpGrant(req)) {
     return res.status(428).json({
       error: 'Esta operación requiere volver a confirmar tu contraseña',
-      code: 'STEP_UP_REQUIRED',
-    })
-  }
-  if (Date.now() - verifiedAt > STEP_UP_WINDOW_MS) {
-    return res.status(428).json({
-      error: 'La confirmación expiró. Vuelve a confirmar tu contraseña.',
       code: 'STEP_UP_REQUIRED',
     })
   }

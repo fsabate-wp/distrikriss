@@ -170,7 +170,10 @@ defender.
 ## Seguridad
 
 - Cambiar el RUC, el ambiente o el certificado exige **volver a confirmar la
-  contraseña** (`428 STEP_UP_REQUIRED`), con una ventana de 10 minutos.
+  contraseña** (`428 STEP_UP_REQUIRED`). `/sri/step-up` verifica la contraseña y
+  emite un **ticket firmado** por el servidor (caduca en 10 minutos); es lo único
+  que valida `requireStepUp`, así que un token robado no puede fabricarse la
+  confirmación enviando una fecha y un nonce inventados.
 - Las peticiones que usan cookies se validan contra `Origin` (protección CSRF).
 - El panel nunca se cachea (`Cache-Control: no-store`).
 - Hay límites de peticiones por IP en login, pedidos, pruebas del SRI,
@@ -180,7 +183,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 163 pruebas unitarias
+npm test                              # 171 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

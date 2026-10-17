@@ -71,9 +71,9 @@ async function tryRefresh() {
 
 /**
  * Confirmación de contraseña para operaciones fiscales sensibles.
- * El servidor exige las cabeceras X-SRI-Verified-At y X-SRI-Step-Up, y solo las
- * acepta durante unos minutos. Se guardan en memoria, no en disco ni en el
- * sessionStorage.
+ * El servidor canjea la contraseña por un ticket firmado (X-SRI-Step-Up) que
+ * vuelve a exigir en cada operación y caduca solo. Se guarda en memoria, no en
+ * disco ni en sessionStorage.
  */
 let stepUp = null
 const STEP_UP_TTL_MS = 10 * 60 * 1000
@@ -109,7 +109,7 @@ async function confirmStepUp(path) {
 
 function stepUpHeaders() {
   if (!hasRecentStepUp()) return {}
-  return { 'X-SRI-Verified-At': String(stepUp.verifiedAt), 'X-SRI-Step-Up': stepUp.nonce }
+  return { 'X-SRI-Step-Up': stepUp.nonce }
 }
 
 async function request(path, { method = 'GET', body, params } = {}, _retry = false, _stepUpDone = false) {

@@ -1,9 +1,9 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
-import crypto from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
-import { requireAuth, requireAdmin, requireTrustedOrigin, requireStepUp, noStore, limits } from '../middleware/auth.js'
+import { signStepUpToken } from '../lib/jwt.js'
+import { requireAuth, requireAdmin, requireTrustedOrigin, requireStepUp, stepUpGrant, noStore, limits } from '../middleware/auth.js'
 import { sendToUser, sendToAdmins } from '../lib/push.js'
 import { sendWhatsApp } from '../lib/whatsapp.js'
 import { uploadImage, uploadBrand, uploadCertificate } from '../middleware/upload.js'
@@ -886,11 +886,9 @@ router.put('/settings', async (req, res, next) => {
     if (tocados.length) {
       // Cambiar el RUC, el ambiente o el certificado exige confirmación reciente
       // de contraseña: con un token robado basta para desviar toda la
-      // facturación del negocio.
-      const verifiedAt = Number(req.get('x-sri-verified-at'))
-      const nonce = req.get('x-sri-step-up')
-      const ventanaMs = 10 * 60 * 1000
-      if (!nonce || !verifiedAt || Date.now() - verifiedAt > ventanaMs) {
+      // facturación del negocio. Se exige el ticket firmado que emite
+      // /sri/step-up; la fecha que manda el cliente no vale.
+      if (!stepUpGrant(req)) {
         return res.status(428).json({
           error: 'Para cambiar los datos fiscales debes volver a confirmar tu contraseña.',
           code: 'STEP_UP_REQUIRED',
@@ -1122,9 +1120,11 @@ router.post('/sri/step-up', limits.stepUp, async (req, res, next) => {
     const ok = user ? await bcrypt.compare(password, user.passwordHash) : false
     if (!ok) return res.status(401).json({ error: 'Contraseña incorrecta' })
     await recordAudit({ req, action: 'SRI_STEP_UP', target: req.user.id })
-    // El nonce liga la confirmación a esta sesión de forma opaca para el cliente.
-    const nonce = crypto.randomBytes(16).toString('hex')
-    res.setHeader('X-SRI-Verified-At', String(Date.now()))
+    // Ticket firmado por el servidor: es la prueba que valida requireStepUp. El
+    // cliente no puede fabricarlo ni reutilizarlo para otro usuario, y caduca
+    // solo (10 min). Antes se devolvia un nonce aleatorio que nadie guardaba, asi
+    // que el cliente podia inventarse uno y saltarse la confirmacion.
+    const nonce = signStepUpToken(user)
     res.setHeader('X-SRI-Step-Up', nonce)
     res.json({ ok: true, verifiedAt: Date.now(), nonce })
   } catch (err) {

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { config } from '../config.js'
 
@@ -23,6 +24,35 @@ export function verifyAccessToken(token) {
 
 export function verifyRefreshToken(token) {
   return jwt.verify(token, config.jwt.refreshSecret)
+}
+
+/**
+ * Ticket de confirmación reforzada (step-up).
+ *
+ * El error original era guardar el nonce solo en el cliente: el servidor aceptaba
+ * las cabeceras X-SRI-Verified-At y X-SRI-Step-Up tal cual, asi que con un token
+ * robado bastaba enviar un timestamp actual y un nonce inventado para cambiar el
+ * RUC, el ambiente o el certificado sin saber la contrasena. Aqui el ticket lo
+ * firma el servidor, de modo que no se puede fabricar ni reutilizar para otro
+ * usuario, y caduca solo.
+ *
+ * La clave se deriva de la de refresh para no anadir otra variable obligatoria y
+ * para que un ticket de step-up no valga como access ni como refresh token (y al
+ * reves): son claves distintas.
+ */
+const stepUpSecret = crypto.createHmac('sha256', config.jwt.refreshSecret).update('sri-step-up').digest('hex')
+
+export const STEP_UP_TTL = '10m'
+const STEP_UP_PURPOSE = 'sri-step-up'
+
+export function signStepUpToken(user) {
+  return jwt.sign({ sub: user.id, purpose: STEP_UP_PURPOSE }, stepUpSecret, { expiresIn: STEP_UP_TTL })
+}
+
+export function verifyStepUpToken(token) {
+  const payload = jwt.verify(token, stepUpSecret)
+  if (payload.purpose !== STEP_UP_PURPOSE) throw new Error('Ticket de confirmación inválido')
+  return payload
 }
 
 function ttlToMs(ttl) {

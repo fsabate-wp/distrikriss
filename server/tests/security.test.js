@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 /**
  * Las protecciones HTTP se prueban de forma aislada, sin levantar el servidor.
  * Lo que no se puede simular aquí (base de datos, cookies reales) se cubre en
- * tests/http.test.js.
+ * los e2e (server/tests/e2e-*.mjs) contra PostgreSQL.
  */
 const BASE_URL = 'http://localhost:4000'
 process.env.APP_URL = BASE_URL
