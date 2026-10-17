@@ -85,6 +85,23 @@ después agrandan la caja.
 El dato de autorización vive en `Invoice.authorizationProof` (el campo
 `comprobante` que devuelve el SRI). Es lo que se persiste en la RIDE.
 
+## Firma (XAdES-BES)
+
+El SRI **no acepta una firma XMLDSig a secas**: exige `XAdES_BES` (ETSI TS
+101 903). Una firma enveloped normal la valida cualquier librería XMLDSig pero
+el SRI la rechaza, y el fallo no aparece hasta emitir la primera factura real.
+
+`lib/sri/xades.js` construye la firma completa con tres referencias —el
+comprobante, `SignedProperties` y `KeyInfo`— y el certificado va **dos veces**:
+dentro de `KeyInfo` y resumido en `SignedProperties` (`CertDigest` +
+`IssuerSerial`), que es lo que impide sustituir el certificado firmante. Todo va
+con **SHA-1** (digest y firma) y C14N 1.0 inclusiva; el SRI no admite SHA-256.
+
+Los fragmentos que se firman por separado (`SignedInfo`, `KeyInfo`,
+`SignedProperties`) declaran en su raíz los espacios de nombres que en el
+documento final heredan de `ds:Signature`, antes de canonizarlos. Si no, el
+resumen no coincidiría con el que calcula el validador del SRI.
+
 ## Certificados
 
 - El `.p12` se sube por el panel y se guarda en `server/certificates/`.
@@ -163,7 +180,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 156 pruebas unitarias
+npm test                              # 163 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

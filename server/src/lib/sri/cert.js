@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import forge from 'node-forge'
-import { SignedXml } from 'xml-crypto'
 import { decryptSecret, fingerprint } from '../crypto.js'
+import { signXadesBes } from './xades.js'
 
 const CERT_DIR = new URL('../../../certificates/', import.meta.url)
 
@@ -47,7 +48,39 @@ function pemFromBytes(bytes, label) {
   return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----`
 }
 
-/** Lee el .p12 y extrae llave privada y certificado. */
+/**
+ * Nombre del emisor en el formato que espera XAdES (X509IssuerName).
+ *
+ * Se invierten los atributos para dejar el pais al final, como en el ejemplo de
+ * la ficha tecnica del SRI, y el correo se rotula EMAILADDRESS porque es el
+ * nombre que acepta el validador (X500Principal) cuando el certificado trae 'E'.
+ */
+function issuerNameOf(certificate) {
+  const attributes = (certificate.issuer?.attributes || []).filter((a) => a.shortName || a.type)
+  return attributes
+    .reverse()
+    .map((a) => {
+      const name = a.shortName === 'E' ? 'EMAILADDRESS' : a.shortName || a.type
+      return `${name}=${a.value || ''}`
+    })
+    .join(',')
+}
+
+/**
+ * Numero de serie en decimal. El certificado lo trae en hexadecimal; XAdES lo
+ * exige como entero decimal.
+ */
+function serialNumberOf(certificate) {
+  const hex = String(certificate.serialNumber || '').replace(/[^0-9a-fA-F]/g, '')
+  if (!hex) return '0'
+  try {
+    return BigInt(`0x${hex}`).toString()
+  } catch {
+    return '0'
+  }
+}
+
+/** Lee el .p12 y extrae llave privada, certificado y el material de XAdES-BES. */
 export function parseP12(p12Buffer, password) {
   const asn1 = forge.asn1.fromDer(p12Buffer.toString('binary'))
   const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password || '')
@@ -58,39 +91,30 @@ export function parseP12(p12Buffer, password) {
   if (!keyBag || !certBags?.length) {
     throw new Error('El certificado .p12 no contiene una llave privada y un certificado válidos')
   }
-  const certificate = forge.pki.certificateToAsn1(certBags[0].cert)
+  const certificate = certBags[0].cert
+  const der = forge.pki.certificateToAsn1(certificate)
+  const derBuffer = Buffer.from(forge.asn1.toDer(der).getBytes(), 'binary')
   return {
     privateKeyPem: forge.pki.privateKeyToPem(keyBag.key),
-    certificatePem: forge.pki.certificateToPem(certBags[0].cert),
-    certificateDerB64: Buffer.from(forge.asn1.toDer(certificate).getBytes(), 'binary').toString('base64'),
+    certificatePem: forge.pki.certificateToPem(certificate),
+    certificateDerB64: derBuffer.toString('base64'),
+    // Material que exige XAdES-BES: el certificado va dentro de KeyInfo y,
+    // ademas, resumido en SignedProperties (CertDigest + IssuerSerial). Sin
+    // estos campos el SRI no puede comprobar que el certificado es el firmante.
+    certificateHashB64: crypto.createHash('sha1').update(derBuffer).digest('base64'),
+    issuerName: issuerNameOf(certificate),
+    serialNumber: serialNumberOf(certificate),
+    modulusB64: forge.util.encode64(forge.util.hexToBytes(certificate.publicKey.n.toString(16))),
+    exponentB64: forge.util.encode64(forge.util.hexToBytes(certificate.publicKey.e.toString(16))),
   }
 }
 
 /**
- * Firma el comprobante. La referencia es el elemento raiz, que es lo que
- * espera el validador del SRI: no debe firmarse un subarbol.
+ * Firma el comprobante en formato XAdES-BES, que es el unico que acepta el SRI.
+ * La firma cubre el elemento raiz (id="comprobante"), no un subarbol.
  */
-export function signInvoiceXml(xml, { privateKeyPem, certificatePem }) {
-  const sig = new SignedXml({ privateKey: privateKeyPem, publicCert: certificatePem })
-  sig.addReference({
-    xpath: "//*[local-name(.)='factura' or local-name(.)='notaCredito' or local-name(.)='notaDebito']",
-    digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
-    transforms: [
-      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
-      'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
-    ],
-  })
-  sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
-  sig.signatureAlgorithm = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
-  sig.computeSignature(xml, {
-    prefix: 'ds',
-    location: {
-      reference: "//*[local-name()='factura' or local-name()='notaCredito' or local-name()='notaDebito']",
-      action: 'append',
-    },
-    existingPrefixes: { ds: 'http://www.w3.org/2000/09/xmldsig#' },
-  })
-  return sig.getSignedXml()
+export function signInvoiceXml(xml, cert) {
+  return signXadesBes(xml, cert)
 }
 
 function readCertificateFile(filename) {
@@ -115,8 +139,8 @@ function readCertificateFile(filename) {
  * visible en el panel antes de emitir.
  */
 export function preflightCertificate(p12Buffer, password, expectedRuc) {
-  const { privateKeyPem, certificatePem } = parseP12(p12Buffer, password)
-  const cert = forge.pki.certificateFromPem(certificatePem)
+  const parsed = parseP12(p12Buffer, password)
+  const cert = forge.pki.certificateFromPem(parsed.certificatePem)
 
   const notBefore = cert.validity.notBefore
   const notAfter = cert.validity.notAfter
@@ -153,8 +177,7 @@ export function preflightCertificate(p12Buffer, password, expectedRuc) {
 
   const daysLeft = Math.floor((notAfter.getTime() - now.getTime()) / 86_400_000)
   return {
-    privateKeyPem,
-    certificatePem,
+    ...parsed,
     subject: cert.subject?.attributes?.map((a) => `${a.shortName || a.name}=${a.value}`).join(', ') || '',
     issuer: cert.issuer?.attributes?.map((a) => `${a.shortName || a.name}=${a.value}`).join(', ') || '',
     rucInCertificate: rucInCert || null,

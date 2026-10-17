@@ -8,9 +8,11 @@ import { DOMParser } from '@xmldom/xmldom'
 
 process.env.SRI_CERT_SECRET = crypto.randomBytes(32).toString('hex')
 
+const { C14nCanonicalization, SignedXml } = await import('xml-crypto')
 const { preflightCertificate, signInvoiceXml, certificatePath, CERT_FILENAME_RE } = await import(
   '../src/lib/sri/cert.js'
 )
+const { unsignedSourceFor } = await import('../src/lib/sri/xades.js')
 const { buildInvoiceXml, buildCreditNoteXml } = await import('../src/lib/sri/xml.js')
 const { renderRide } = await import('../src/lib/sri/ride.js')
 const { buildLines, buildTaxGroups, computeTotals } = await import('../src/lib/sri/totals.js')
@@ -201,18 +203,35 @@ test('la validacion del nombre de certificado es la misma al guardar y al leer',
   )
 })
 
-test('el XML firmado lleva la firma sobre el elemento raiz', () => {
+function firmarComprobante() {
   const { p12, pass } = generarP12()
   const cert = preflightCertificate(p12, pass, '1791312120001')
   const { xml } = payload()
-  const signed = signInvoiceXml(xml, cert)
+  return { xml, cert, signed: signInvoiceXml(xml, cert) }
+}
 
-  assert.match(signed, /<ds:SignatureValue>/)
+function extraerSignature(signed) {
+  const start = signed.indexOf('<ds:Signature')
+  const end = signed.indexOf('</ds:Signature>') + '</ds:Signature>'.length
+  return signed.slice(start, end)
+}
+
+test('el XML firmado lleva una firma XAdES-BES anclada en la raiz', () => {
+  // El SRI no acepta una firma XMLDSig a secas: exige XAdES_BES (ETSI TS 101
+  // 903). La implementacion anterior producia una firma valida para cualquier
+  // libreria XMLDSig pero el SRI la rechazaba, y el fallo no aparecia hasta
+  // emitir la primera factura real.
+  const { signed, cert } = firmarComprobante()
+
   assert.match(signed, /xmlns:ds="http:\/\/www\.w3\.org\/2000\/09\/xmldsig#"/)
-  assert.match(signed, /rsa-sha256/)
-  assert.match(signed, /xmlenc#sha256/)
+  assert.match(signed, /xmlns:xades="http:\/\/uri\.etsi\.org\/01903\/v1\.3\.2#"/)
+  assert.match(signed, /<xades:SignedProperties/)
+  assert.match(signed, /<xades:QualifyingProperties[^>]*Target="#Signature-/)
+  assert.match(signed, /<xades:SigningCertificate>/)
+  assert.match(signed, /<xades:DataObjectFormat/)
   // La firma va dentro de <factura>, que es lo que valida el SRI.
   assert.ok(signed.indexOf('<ds:Signature') > signed.indexOf('<factura'))
+  assert.ok(signed.indexOf('<ds:Signature') < signed.indexOf('</factura>'))
 
   let errores = []
   const doc = new DOMParser({
@@ -225,14 +244,113 @@ test('el XML firmado lleva la firma sobre el elemento raiz', () => {
   // La firma va con prefijo de espacio de nombres, hay que buscarla por namespace.
   assert.ok(doc.getElementsByTagNameNS('*', 'SignatureValue').length > 0, 'falta SignatureValue')
   assert.ok(doc.getElementsByTagNameNS('*', 'SignedInfo').length > 0, 'falta SignedInfo')
-  const referencia = doc.getElementsByTagNameNS('*', 'Reference')[0]
-  assert.equal(referencia.getAttribute('URI'), '#comprobante', 'la referencia debe apuntar al id del comprobante')
-  // La firma vive dentro de <factura>, que es el elemento que valida el SRI.
-  const firma = doc.getElementsByTagNameNS('*', 'Signature')[0]
-  assert.equal(firma.parentNode.nodeName, 'factura')
+  const firma = doc.getElementsByTagNameNS('*', 'Signature').length > 0
+  assert.ok(firma)
+  const firmaNodo = doc.getElementsByTagNameNS('*', 'Signature')[0]
+  assert.equal(firmaNodo.parentNode.nodeName, 'factura')
+
+  // Validacion completa: cubre las tres referencias y la firma RSA.
+  const sig = new SignedXml({ publicCert: cert.certificatePem, getCertFromSignature: () => null })
+  sig.loadSignature(extraerSignature(signed))
+  assert.equal(sig.checkSignature(signed), true, 'la firma XAdES-BES debe validar')
 })
 
-test('la firma de una nota de credito tambien se ancla en la raiz', () => {
+test('la firma XAdES-BES usa SHA-1: el SRI no admite SHA-256', () => {
+  const { signed } = firmarComprobante()
+  assert.match(signed, /#sha1"/)
+  assert.match(signed, /#rsa-sha1"/)
+  assert.match(signed, /REC-xml-c14n-20010315/)
+  assert.doesNotMatch(signed, /sha256/i)
+})
+
+test('la firma incluye las tres referencias y el certificado dentro de KeyInfo', () => {
+  const { signed, cert } = firmarComprobante()
+  const doc = new DOMParser().parseFromString(signed, 'text/xml')
+  const referencias = [...doc.getElementsByTagNameNS('*', 'Reference')]
+  assert.equal(referencias.length, 3, 'XAdES-BES exige documento, SignedProperties y KeyInfo')
+
+  const uris = referencias.map((r) => r.getAttribute('URI'))
+  assert.ok(uris.includes('#comprobante'), 'falta la referencia al comprobante')
+  const refProps = referencias.find((r) => (r.getAttribute('Type') || '').endsWith('#SignedProperties'))
+  assert.ok(refProps, 'falta la referencia a SignedProperties con su Type')
+
+  // El certificado va en KeyInfo...
+  const certificado = doc.getElementsByTagNameNS('*', 'X509Certificate')[0]
+  assert.equal(certificado.textContent.trim(), cert.certificateDerB64)
+  // ...y resumido en SignedProperties, que es lo que impide sustituirlo.
+  const certDigest = doc.getElementsByTagNameNS('*', 'CertDigest')[0]
+  assert.equal(
+    certDigest.getElementsByTagNameNS('*', 'DigestValue')[0].textContent.trim(),
+    cert.certificateHashB64,
+  )
+})
+
+test('el valor de firma verifica con RSA-SHA1 sobre SignedInfo canonicalizado', () => {
+  const { signed, cert } = firmarComprobante()
+  const doc = new DOMParser().parseFromString(signed, 'text/xml')
+  const signedInfo = doc.getElementsByTagNameNS('*', 'SignedInfo')[0]
+  const canon = new C14nCanonicalization().process(signedInfo, {})
+  const valor = doc.getElementsByTagNameNS('*', 'SignatureValue')[0].textContent.replace(/\s+/g, '')
+  const publicKey = crypto.createPublicKey(cert.certificatePem)
+  assert.equal(
+    crypto.verify('sha1', Buffer.from(canon, 'utf8'), publicKey, Buffer.from(valor, 'base64')),
+    true,
+  )
+})
+
+test('un XML sin firmar se firma desde cero y no se toca', () => {
+  const { xml } = payload()
+  const salida = unsignedSourceFor(xml)
+  assert.equal(salida.signed, false)
+  assert.equal(salida.xml, xml)
+})
+
+test('un XML ya firmado con XAdES-BES no se vuelve a firmar', () => {
+  const { signed } = firmarComprobante()
+  const salida = unsignedSourceFor(signed)
+  assert.equal(salida.signed, true)
+  assert.equal(salida.xml, signed)
+})
+
+test('un comprobante firmado con el formato antiguo se detecta y se puede rehacer', () => {
+  // La firma anterior (XMLDSig sin XAdES) tambien contiene <ds:SignatureValue>,
+  // asi que la comprobacion ingenua la daria por buena y quedaria atascada con
+  // una firma que el SRI rechaza. Debe reconocerse como no firmada y devolver el
+  // XML sin firma para volver a firmarlo.
+  const { xml } = payload()
+  const firmaAntigua =
+    '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo/>' +
+    '<ds:SignatureValue>abcdef</ds:SignatureValue></ds:Signature>'
+  const firmadoAntiguo = xml.replace('</factura>', `${firmaAntigua}</factura>`)
+
+  const salida = unsignedSourceFor(firmadoAntiguo)
+  assert.equal(salida.signed, false)
+  assert.doesNotMatch(salida.xml, /ds:Signature/)
+
+  const { p12, pass } = generarP12()
+  const cert = preflightCertificate(p12, pass, '1791312120001')
+  const rehecho = signInvoiceXml(salida.xml, cert)
+  assert.match(rehecho, /<xades:SignedProperties/)
+  const sig = new SignedXml({ publicCert: cert.certificatePem, getCertFromSignature: () => null })
+  sig.loadSignature(extraerSignature(rehecho))
+  assert.equal(sig.checkSignature(rehecho), true)
+})
+
+test('el resumen del comprobante cubre el XML original con la firma enveloped', () => {
+  const { xml, signed } = firmarComprobante()
+  const canonOriginal = new C14nCanonicalization().process(
+    new DOMParser().parseFromString(xml, 'text/xml').documentElement,
+    {},
+  )
+  const esperado = crypto.createHash('sha1').update(canonOriginal, 'utf8').digest('base64')
+  const doc = new DOMParser().parseFromString(signed, 'text/xml')
+  const referencias = [...doc.getElementsByTagNameNS('*', 'Reference')]
+  const refDoc = referencias.find((r) => r.getAttribute('URI') === '#comprobante')
+  const digest = refDoc.getElementsByTagNameNS('*', 'DigestValue')[0].textContent.trim()
+  assert.equal(digest, esperado)
+})
+
+test('la firma de una nota de credito tambien se ancla en la raiz y valida', () => {
   const { p12, pass } = generarP12()
   const cert = preflightCertificate(p12, pass, '1791312120001')
   const { lines, groups, totals } = payload()
@@ -259,9 +377,12 @@ test('la firma de una nota de credito tambien se ancla en la raiz', () => {
     lines,
   })
   const signed = signInvoiceXml(xml, cert)
-  assert.match(signed, /<ds:SignatureValue>/)
+  assert.match(signed, /<xades:SignedProperties/)
   assert.ok(signed.indexOf('<ds:Signature') > signed.indexOf('<notaCredito'))
   assert.ok(signed.indexOf('<ds:Signature') < signed.indexOf('</notaCredito>'))
+  const sig = new SignedXml({ publicCert: cert.certificatePem, getCertFromSignature: () => null })
+  sig.loadSignature(extraerSignature(signed))
+  assert.equal(sig.checkSignature(signed), true)
 })
 
 test('la RIDE se genera como PDF con la informacion fiscal', async () => {

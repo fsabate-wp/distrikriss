@@ -4,6 +4,7 @@ import { buildAccessKey, guayaquilParts, guayaquilInstant } from './clave.js'
 import { buildInvoiceXml, buildCreditNoteXml } from './xml.js'
 import { buildLines, buildTaxGroups, computeTotals, assertReconciled } from './totals.js'
 import { loadCertificate, signInvoiceXml, certificatePath } from './cert.js'
+import { unsignedSourceFor } from './xades.js'
 import { sendReceipt, awaitAuthorization, queryAuthorization } from './client.js'
 import { identificationTypeFor } from './ruc.js'
 
@@ -325,8 +326,8 @@ export async function submitInvoice(invoiceId, { actor = null, force = false } =
     return prisma.invoice.findUnique({ where: { id: invoice.id } })
   }
 
-  const alreadySigned = Boolean(invoice.xml && invoice.xml.includes('<ds:SignatureValue'))
-  const signedXml = alreadySigned ? invoice.xml : signInvoiceXml(invoice.xml, cert)
+  const { signed: alreadySigned, xml: sourceXml } = unsignedSourceFor(invoice.xml)
+  const signedXml = alreadySigned ? invoice.xml : signInvoiceXml(sourceXml, cert)
 
   invoice = await prisma.invoice.update({
     where: { id: invoice.id },
