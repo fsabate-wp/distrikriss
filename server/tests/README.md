@@ -195,7 +195,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 179 pruebas unitarias
+npm test                              # 184 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

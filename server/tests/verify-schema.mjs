@@ -90,7 +90,17 @@ async function main() {
   check('OrderItem.listPrice existe', colsItem.includes('listPrice'), colsItem.join(', '))
   check('OrderItem.sriCode existe', colsItem.includes('sriCode'), colsItem.join(', '))
 
-  console.log('\n=== 8. Limpieza ===')
+  console.log('\n=== 8. El stock admite decimales, como la cantidad ===')
+const tipoStock = await prisma.$queryRaw`
+  SELECT data_type, numeric_precision, numeric_scale FROM information_schema.columns
+  WHERE table_name = 'Product' AND column_name = 'stock'
+`
+check('Product.stock es numerico, no entero', tipoStock[0]?.data_type === 'numeric',
+  `data_type=${tipoStock[0]?.data_type}`)
+check('con dos decimales', Number(tipoStock[0]?.numeric_scale) === 2,
+  `scale=${tipoStock[0]?.numeric_scale}`)
+
+console.log('\n=== 9. Limpieza ===')
   await prisma.settings.update({
     where: { id: 1 },
     data: { sriCertificatePasswordEnc: '', sriCertificatePasswordFor: '' },

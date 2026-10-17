@@ -74,8 +74,13 @@ recibe `400 INVALID_STEP`.
 
 El stock comparte unidad con la cantidad: los 400 g de una bandeja se comparan
 contra el número de stock. Si el tendero pone 10 y la bandeja son 400 g, el
-producto queda invendible aunque haya existencias de sobra. Conviene documentar
-en el panel que el stock va en la misma unidad que el mínimo.
+producto queda invendible aunque haya existencias de sobra. El panel lo avisa al
+lado del campo, y conviene que el stock se anote en la misma unidad que el mínimo.
+
+Es **decimal**, como la cantidad: a granel se vende por tramos (0.5 kg, 1.5 kg),
+así que un stock de `2.5` (2 kg y medio) es válido y se descuenta exacto. Antes
+era entero y descontar 1.5 kg lo redondeaba, descuadrando el inventario. Un valor
+negativo (`-1`) significa **sin límite**, no agotado: el catálogo entero llega así.
 
 El servidor **nunca** toma el precio del cliente: siempre lo lee del catálogo y
 lo calcula. El carrito guarda un precio para mostrarlo, pero es informativo.
@@ -299,7 +304,7 @@ su unidad de medida, sin inventar un empaque.
 ## Pruebas
 
 ```bash
-npm test                                  # 179 unitarias
+npm test                                  # 184 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 

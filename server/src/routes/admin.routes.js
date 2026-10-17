@@ -24,6 +24,7 @@ import { renderRide } from '../lib/sri/ride.js'
 import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
 import { encryptSecret, decryptSecret, fingerprint, encryptionAvailable } from '../lib/crypto.js'
 import { recordAudit, redactSettings } from '../lib/audit.js'
+import { stockLimitado, STOCK_SIN_LIMITE } from '../lib/stock.js'
 import { booleanIntersects, feature } from '@turf/turf'
 import { closeRing } from '../lib/geo.js'
 
@@ -237,7 +238,7 @@ router.patch('/orders/:id/status', async (req, res, next) => {
       if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
         for (const item of order.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } })
-          if (product && product.stock >= 0) {
+          if (product && stockLimitado(product.stock)) {
             await tx.product.update({
               where: { id: item.productId },
               data: { stock: { increment: item.quantity } },
@@ -374,6 +375,7 @@ router.get('/products', async (req, res, next) => {
         price: toNumber(p.price),
         minQuantity: p.minQuantity != null ? toNumber(p.minQuantity) : 1,
         stepQuantity: p.stepQuantity != null ? toNumber(p.stepQuantity) : 1,
+        stock: toNumber(p.stock),
         imageUrl: p.imageUrl?.startsWith('/') ? `${config.publicApiUrl}${p.imageUrl}` : p.imageUrl,
       })),
     })
@@ -392,7 +394,9 @@ const productSchema = z.object({
   sku: z.string().max(40).optional().or(z.literal('')).nullable(),
   minQuantity: z.number().min(0.01).max(10000).optional(),
   stepQuantity: z.number().min(0.01).max(10000).optional(),
-  stock: z.number().int().min(-1).optional(),
+  // Decimal, igual que la cantidad: a granel el stock se expresa en la misma
+  // unidad (gramos, kilos) y admite fracciones como 2.5 kg. -1 es sin límite.
+  stock: z.number().min(STOCK_SIN_LIMITE).optional(),
   imageUrl: z.string().max(500).optional().or(z.literal('')),
   active: z.boolean().optional(),
   featured: z.boolean().optional(),
@@ -454,7 +458,7 @@ router.post('/products', async (req, res, next) => {
       },
       include: { category: { select: { id: true, name: true } } },
     })
-    res.status(201).json({ product: { ...product, price: toNumber(product.price), minQuantity: toNumber(product.minQuantity), stepQuantity: toNumber(product.stepQuantity) } })
+    res.status(201).json({ product: { ...product, price: toNumber(product.price), minQuantity: toNumber(product.minQuantity), stepQuantity: toNumber(product.stepQuantity), stock: toNumber(product.stock) } })
   } catch (err) {
     next(err)
   }
@@ -492,7 +496,7 @@ router.put('/products/:id', async (req, res, next) => {
       },
       include: { category: { select: { id: true, name: true } } },
     })
-    res.json({ product: { ...updated, price: toNumber(updated.price), minQuantity: toNumber(updated.minQuantity), stepQuantity: toNumber(updated.stepQuantity) } })
+    res.json({ product: { ...updated, price: toNumber(updated.price), minQuantity: toNumber(updated.minQuantity), stepQuantity: toNumber(updated.stepQuantity), stock: toNumber(updated.stock) } })
   } catch (err) {
     next(err)
   }

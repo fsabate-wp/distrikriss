@@ -62,6 +62,9 @@ const withImageUrl = (item) => {
   if (out.price != null) out.price = Number(out.price)
   if (out.minQuantity != null) out.minQuantity = Number(out.minQuantity)
   if (out.stepQuantity != null) out.stepQuantity = Number(out.stepQuantity)
+  // El stock también es decimal (comparte unidad con la cantidad). Sin esto
+  // viajaría como cadena y el carrito lo compararía como texto.
+  if (out.stock != null) out.stock = Number(out.stock)
   // El precio final de venta viaja ya calculado: el cliente no puede equivocarse
   // al aplicar el descuento, y el servidor cobra exactamente este valor.
   if (out.price != null) {

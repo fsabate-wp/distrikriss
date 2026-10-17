@@ -101,7 +101,10 @@ model Product {
   presentation String?
   minQuantity  Decimal     @default(1) @db.Decimal(10, 2)
   stepQuantity Decimal     @default(1) @db.Decimal(10, 2)
-  stock        Int         @default(-1)
+  // El stock comparte unidad con la cantidad (gramos, kilos, unidades) y la
+  // cantidad admite decimales (media libra, 1.5 kg), así que el stock también.
+  // -1 significa sin límite.
+  stock        Decimal     @default(-1) @db.Decimal(10, 2)
   imageUrl     String?
   active       Boolean     @default(true)
   featured     Boolean     @default(false)

@@ -81,10 +81,13 @@
             v-model.number="form.stock"
             type="number"
             min="0"
-            step="1"
+            step="0.01"
             class="form-control"
           />
-          <small class="muted">Sin límite, el cliente siempre puede comprarlo.</small>
+          <small class="muted">
+            En la misma unidad que el mínimo: si el mínimo es 400 g, un stock de 4000 son 10 bandejas.
+            Sin límite, el cliente siempre puede comprarlo.
+          </small>
         </div>
         <div class="form-group">
           <label>Categoría</label>

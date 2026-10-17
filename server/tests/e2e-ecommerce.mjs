@@ -442,6 +442,45 @@ await prisma.product.deleteMany({
   check(Number(enCatalogo?.minQuantity) === 400, 'y que el mínimo es 400 g')
   check(Number(enCatalogo?.stepQuantity) === 400, 'y que se vende en bandejas de 400 g')
 
+  console.log('\n=== 6c. El stock admite fracciones (a granel) ===')
+  // El defecto: `Product.stock` era INTEGER y la cantidad es decimal, asi que un
+  // producto con 2.5 kg de existencia no podia venderse por 1.5 kg: el descuento
+  // del stock fallaba o se redondeaba, dejando el inventario descuadrado.
+  const ajo = await prisma.product.create({
+    data: {
+      name: 'Ajo al kilo',
+      slug: rand('ajo-'),
+      price: 4, // $4 la media libra de 0.5 kg -> $8 el kilo
+      discount: 0,
+      unit: 'Kilo',
+      minQuantity: 0.5,
+      stepQuantity: 0.5,
+      stock: 2.5,
+      categoryId: cat.id,
+      ivaRate: 15,
+    },
+  })
+
+  const medio = await pedir([{ productId: ajo.id, quantity: 1.5 }])
+  check(medio.res.ok, `1.5 kg con 2.5 en stock: ${medio.res.status} ${medio.body?.error || ''}`)
+  if (medio.body?.order) {
+    check(Number(medio.body.order.subtotal) === 12, `1.5 kg a $8 son $12 (${medio.body.order.subtotal})`)
+    await prisma.order.delete({ where: { id: medio.body.order.id } })
+  }
+  const stockAjo = Number((await prisma.product.findUnique({ where: { id: ajo.id } })).stock)
+  check(stockAjo === 1, `el stock queda en 1.0 kg (2.5 - 1.5), no redondeado (${stockAjo})`)
+
+  const deMas = await pedir([{ productId: ajo.id, quantity: 3 }])
+  check(!deMas.res.ok, `3 kg sobre 1 kg disponible se rechaza: HTTP ${deMas.res.status}`)
+  check(deMas.body?.code === 'OUT_OF_STOCK', `con el codigo de stock (${deMas.body?.code})`)
+
+  // El stock viaja como numero, no como cadena: el carrito lo compara con la cantidad.
+  r = await fetch(`${BASE}/api/catalog/products?search=Ajo al kilo`)
+  const catalogoAjo = await r.json()
+  const ajoCatalogo = catalogoAjo.products.find((p) => p.id === ajo.id)
+  check(typeof ajoCatalogo?.stock === 'number', `el stock del catalogo es numero (${typeof ajoCatalogo?.stock})`)
+  check(ajoCatalogo?.stock === 1, `y vale 1 (${ajoCatalogo?.stock})`)
+
   console.log('\n=== 7. El catalogo sigue abierto ===')
   const catNo = await fetch(`${BASE}/api/catalog/products?limit=200`)
   check(catNo.status === 200, 'el catalogo es publico sin sesion')
@@ -455,7 +494,7 @@ console.log('\n=== Limpieza ===')
 if (datos) {
   await prisma.order.deleteMany({ where: { user: { email: { in: [datos.email, datos.email2] } } } })
   await prisma.product.deleteMany({
-      where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango', 'Champiñones en bandeja'] } },
+      where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango', 'Champiñones en bandeja', 'Ajo al kilo'] } },
     })
   await prisma.category.deleteMany({ where: { id: datos.cat.id } })
   await prisma.deliveryZone.deleteMany({ where: { id: datos.zona.id } })

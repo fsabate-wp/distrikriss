@@ -18,6 +18,7 @@ import { isValidIvaRate } from '../lib/sri/xml.js'
 import { renderRide } from '../lib/sri/ride.js'
 import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
 import { INVOICE_STATUS_LABELS, invoiceMessageFor } from '../lib/sri/labels.js'
+import { stockLimitado, alcanzaElStock } from '../lib/stock.js'
 import { limits } from '../middleware/auth.js'
 
 import * as precios from '../lib/precios.js'
@@ -253,7 +254,11 @@ router.post('/', limits.checkout, async (req, res, next) => {
      */
     const cantidadPorProducto = new Map()
     for (const item of data.items) {
-      cantidadPorProducto.set(item.productId, (cantidadPorProducto.get(item.productId) || 0) + item.quantity)
+      // Se redondea a dos decimales, la precisión del stock y de la cantidad: la
+      // suma en coma flotante de 0.1 + 0.2 da 0.30000000000000004 y la
+      // comparación contra un stock de 0.30 fallaría por esa centésima fantasma.
+      const previo = cantidadPorProducto.get(item.productId) || 0
+      cantidadPorProducto.set(item.productId, round2(previo + item.quantity))
     }
 
     const globalIva = Number(settings.sriIvaRate) || 15
@@ -273,11 +278,11 @@ router.post('/', limits.checkout, async (req, res, next) => {
     for (const [productId, cantidad] of cantidadPorProducto) {
       const product = productMap.get(productId)
       if (!product) throw Object.assign(new Error('Producto no disponible'), { status: 400 })
-      if (product.stock >= 0 && product.stock < cantidad) {
+      if (!alcanzaElStock(product.stock, cantidad)) {
         throw Object.assign(
           new Error(
             cantidadPorProducto.size > 1
-              ? `Stock insuficiente para "${product.name}": quedan ${product.stock} ${product.unit}`
+              ? `Stock insuficiente para "${product.name}": quedan ${Number(product.stock)} ${product.unit}`
               : `Stock insuficiente para "${product.name}"`,
           ),
           { status: 400, code: 'OUT_OF_STOCK' },
@@ -437,7 +442,7 @@ const deliveryFee = round2(check.deliveryFee)
        */
       for (const [productId, cantidad] of cantidadPorProducto) {
         const product = productMap.get(productId)
-        if (product.stock >= 0) {
+        if (stockLimitado(product.stock)) {
           const { count } = await tx.product.updateMany({
             where: { id: productId, stock: { gte: cantidad } },
             data: { stock: { decrement: cantidad } },
@@ -615,7 +620,7 @@ router.get('/repeat/last', async (req, res, next) => {
         continue
       }
       const stock = Number(p.stock)
-      const agotado = stock >= 0 && stock <= 0
+      const agotado = stockLimitado(stock) && stock <= 0
       disponibles.push({
         productId: p.id,
         name: p.name,
@@ -633,7 +638,7 @@ router.get('/repeat/last', async (req, res, next) => {
         quantity: Number(item.quantity),
         available: !agotado,
         stock: stock,
-        stockLimit: stock >= 0 ? Math.max(0, stock) : null,
+        stockLimit: stockLimitado(stock) ? Math.max(0, stock) : null,
       })
     }
 
@@ -696,7 +701,7 @@ router.post('/:id/cancel', async (req, res, next) => {
       })
       for (const item of order.items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } })
-        if (product && product.stock >= 0) {
+        if (product && stockLimitado(product.stock)) {
           await tx.product.update({
             where: { id: item.productId },
             data: { stock: { increment: item.quantity } },
