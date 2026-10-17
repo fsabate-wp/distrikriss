@@ -149,15 +149,18 @@ export function computeTotals(lines, totalDiscount) {
  * no se emite: es preferible avisar ahora que dejar un documento que el SRI
  * aceptaria y que despues no se podria defender.
  *
+ * `reference` nombra contra que se contrasta: el pedido (factura) o el
+ * comprobante original (nota de credito, que debe anularlo por el mismo importe).
+ *
  * La tolerancia es de un centimo (redondeo), con un epsilon extra porque en coma
  * flotante un centimo exacto puede compararse como 0.010000000000000009.
  */
-export function assertReconciled(computed, order) {
+export function assertReconciled(computed, order, reference = 'pedido') {
   const orderTotal = round2(Number(order.total))
   const difference = Math.abs(computed.total - orderTotal)
   if (difference > 0.01 + 1e-9) {
     throw new Error(
-      `El total de la factura (${computed.total.toFixed(2)}) no coincide con el total del pedido ` +
+      `El total del comprobante (${computed.total.toFixed(2)}) no coincide con el total del ${reference} ` +
         `(${orderTotal.toFixed(2)}). No se emite el comprobante para evitar un documento fiscal discordante.`,
     )
   }

@@ -11,7 +11,7 @@
 import { prisma } from '../src/lib/prisma.js'
 import { config } from '../src/config.js'
 import { nextSequential } from '../src/lib/sri/index.js'
-import { prepareInvoice, submitInvoice, canIssueInvoice } from '../src/lib/sri/index.js'
+import { prepareInvoice, submitInvoice, canIssueInvoice, issueCreditNote } from '../src/lib/sri/index.js'
 import { buildInvoiceXml, taxFor } from '../src/lib/sri/xml.js'
 import { DOMParser } from '@xmldom/xmldom'
 
@@ -19,6 +19,7 @@ let fallos = 0
 let pruebas = 0
 let admin = null
 let adminCreado = false
+let creditoOrder = null
 
 function check(nombre, condicion, detalle = '') {
   pruebas += 1
@@ -244,8 +245,66 @@ async function main() {
     new Set(tasas.map((t) => taxFor(t).percentageCode)).size === tasas.length)
 
   // ---------------------------------------------------------------------
+  console.log('\n=== 8. La nota de credito: conciliacion y estado del original ===')
+  creditoOrder = await prepararPedido({ code: `${sello}-4`, precio: 12, cantidad: 1, descuento: 0, total: 12 })
+  const invCredito = await prepareInvoice(creditoOrder.id)
+  // Sin certificado no se puede enviar de verdad, asi que se simula que el SRI
+  // ya autorizo la factura: es el punto de partida de una nota de credito.
+  await prisma.invoice.update({
+    where: { id: invCredito.id },
+    data: { status: 'AUTHORIZED', authorizationNumber: '9999999999', authorizationDate: new Date() },
+  })
+
+  // a) La nota debe cuadrar con el COMPROBANTE ORIGINAL, no con el pedido actual:
+  //    si el pedido cambio despues de facturarse, no se emite una nota discordante.
+  const itemCredito = creditoOrder.items[0]
+  await prisma.orderItem.update({ where: { id: itemCredito.id }, data: { price: Number(itemCredito.price) + 5 } })
+  let concilioAbortado = false
+  try {
+    await issueCreditNote(invCredito.id, { reason: 'prueba e2e de anulacion' })
+  } catch (err) {
+    concilioAbortado = /comprobante original/.test(err.message)
+  }
+  await prisma.orderItem.update({ where: { id: itemCredito.id }, data: { price: itemCredito.price } })
+  check('una nota que no cuadra con el comprobante original no se emite', concilioAbortado)
+  check(
+    'y no queda una nota a medias',
+    (await prisma.invoice.count({ where: { creditedById: invCredito.id } })) === 0,
+  )
+
+  // b) Con el pedido intacto la nota se prepara. Sin certificado el envio falla,
+  //    pero el original NO debe quedar anulado hasta que el SRI autorice la nota.
+  let nota = null
+  try {
+    nota = await issueCreditNote(invCredito.id, { reason: 'prueba e2e de anulacion' })
+  } catch {
+    nota = await prisma.invoice.findFirst({ where: { creditedById: invCredito.id } })
+  }
+  check('la nota de credito se crea', Boolean(nota) && nota.docType === 'NOTA_CREDITO')
+  check(
+    'la nota anula por el mismo importe que el original',
+    nota && Math.abs(Number(nota.totalFiscal) - Number(invCredito.totalFiscal)) < 0.01,
+    `${nota?.totalFiscal} vs ${invCredito.totalFiscal}`,
+  )
+  const originalTrasNota = await prisma.invoice.findUnique({ where: { id: invCredito.id } })
+  check(
+    'el original sigue AUTHORIZED mientras la nota no esta autorizada',
+    originalTrasNota.status === 'AUTHORIZED',
+    originalTrasNota.status,
+  )
+
+  // c) No se admite una segunda nota sobre el mismo comprobante.
+  let duplicadoBloqueado = false
+  try {
+    await issueCreditNote(invCredito.id, { reason: 'segunda nota e2e' })
+  } catch (err) {
+    duplicadoBloqueado = /ya tiene una nota/.test(err.message)
+  }
+  check('un comprobante no admite dos notas de credito', duplicadoBloqueado)
+
+  // ---------------------------------------------------------------------
   console.log('\n=== Limpieza ===')
-  const ids = [order.id, orderConDescuento.id, orderRoto.id]
+  const ids = [order.id, orderConDescuento.id, orderRoto.id, ...(creditoOrder ? [creditoOrder.id] : [])]
   const invoices = await prisma.invoice.findMany({ where: { orderId: { in: ids } }, select: { id: true } })
   await prisma.invoiceEvent.deleteMany({ where: { invoiceId: { in: invoices.map((i) => i.id) } } })
   await prisma.invoice.deleteMany({ where: { orderId: { in: ids } } })

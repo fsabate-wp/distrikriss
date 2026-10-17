@@ -1341,6 +1341,12 @@ router.post('/invoices/:id/credit-note', limits.invoiceWrite, requireStepUp, asy
     const { reason } = z.object({ reason: z.string().min(5).max(300) }).parse(req.body)
     const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } })
     if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    // Sin certificado no se podria firmar la nota: mejor avisar antes de crear
+    // un comprobante que quedaria a medias.
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } })
+    if (!canIssueInvoice(settings)) {
+      return res.status(400).json({ error: 'La facturación SRI no está configurada (actívala y sube el certificado)' })
+    }
     await recordAudit({
       req,
       action: 'SRI_CREDIT_NOTE',

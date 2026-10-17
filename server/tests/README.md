@@ -51,6 +51,12 @@ POST /api/admin/invoices/:id/credit-note  { reason: "..." }
 Cancelar un pedido cuya factura ya está autorizada se bloquea con un mensaje
 que indica el número de comprobante y enlaza a la nota de crédito.
 
+La nota se prepara con el **mismo importe** que la factura que anula: se
+reconcilia contra el total del comprobante original y, si el pedido cambió
+después de facturarse, no se emite. La factura pasa a `CREDITED` **solo cuando
+el SRI autoriza la nota**; mientras tanto sigue `AUTHORIZED` (vigente), porque
+una nota fallida no anula nada. Un comprobante admite una sola nota de crédito.
+
 ## RIDE
 
 La RIDE es lo que permite a una persona o empresa **deducir IVA**. Sin ella la
@@ -183,7 +189,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 176 pruebas unitarias
+npm test                              # 177 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

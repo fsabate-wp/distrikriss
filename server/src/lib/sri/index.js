@@ -247,6 +247,21 @@ async function applyAuthorization(invoice, auth, actor = null) {
       actorId: actor?.id,
       actorRole: actor?.role,
     })
+    // Si el comprobante autorizado es una nota de credito, recien ahora la
+    // factura que anula pasa a CREDITED. Idempotente: un reintento que vuelva a
+    // ver la nota autorizada no repite el estado ni el evento.
+    if (invoice.creditedById) {
+      const original = await prisma.invoice.findUnique({ where: { id: invoice.creditedById } })
+      if (original && original.status !== 'CREDITED') {
+        await prisma.invoice.update({ where: { id: original.id }, data: { status: 'CREDITED' } })
+        await logInvoiceEvent(original.id, 'CREDIT_NOTE_AUTHORIZED', {
+          status: 'CREDITED',
+          detail: `Nota de crédito ${invoice.number} autorizada`,
+          actorId: actor?.id,
+          actorRole: actor?.role,
+        })
+      }
+    }
     return updated
   }
 
@@ -420,7 +435,14 @@ export async function issueCreditNote(invoiceId, { reason, actor = null } = {}) 
   if (original.status !== 'AUTHORIZED') {
     throw new Error('Solo se puede anular un comprobante que el SRI ya autorizó')
   }
-  if (original.creditedById) throw new Error('Este comprobante ya tiene una nota de crédito asociada')
+  if (original.docType !== 'FACTURA') {
+    throw new Error('Solo una factura autorizada se puede anular con una nota de crédito')
+  }
+  // La relacion es creditNote.creditedById -> original: para saber si este
+  // comprobante ya tiene nota hay que contar las que apuntan a el (antes se
+  // miraba original.creditedById, que solo delata que el original es una nota).
+  const notasExistentes = await prisma.invoice.count({ where: { creditedById: original.id } })
+  if (notasExistentes > 0) throw new Error('Este comprobante ya tiene una nota de crédito asociada')
   if (!reason || String(reason).trim().length < 5) {
     throw new Error('Indica el motivo de la anulación (mínimo 5 caracteres)')
   }
@@ -432,6 +454,10 @@ export async function issueCreditNote(invoiceId, { reason, actor = null } = {}) 
   const { lines, totalDiscount } = buildLines(order, settings)
   const groups = buildTaxGroups(lines)
   const totals = computeTotals(lines, totalDiscount)
+  // La nota debe anular el comprobante original por el mismo importe, no por el
+  // total actual del pedido (que pudo cambiar despues de facturarse). Sin esta
+  // comprobacion se emitia una nota que no cuadraba con la factura que anula.
+  assertReconciled(totals, { total: original.totalFiscal }, 'comprobante original')
 
   const { establishment, emissionPoint, environment } = seriesFor(settings)
   const issueDate = guayaquilInstant(new Date())
@@ -501,16 +527,19 @@ export async function issueCreditNote(invoiceId, { reason, actor = null } = {}) 
     data: { lastAccessKey: accessKey, lastIssuedAt: issueDate },
   })
 
-  await prisma.invoice.update({ where: { id: original.id }, data: { status: 'CREDITED' } })
   await logInvoiceEvent(creditNote.id, 'PREPARED', {
     status: 'DRAFT',
     detail: `Nota de crédito contra ${original.number}`,
     actorId: actor?.id,
     actorRole: actor?.role,
   })
+  // El original NO se marca CREDITED aqui: mientras la nota no este autorizada
+  // por el SRI, la factura sigue vigente. Se anula cuando el SRI autoriza la nota
+  // (applyAuthorization). Antes se marcaba de una vez, asi que un envio fallido
+  // dejaba una factura "anulada" que legalmente seguia viva.
   await logInvoiceEvent(original.id, 'CREDIT_NOTE_ISSUED', {
-    status: 'CREDITED',
-    detail: `Nota de crédito ${creditNote.number}`,
+    status: original.status,
+    detail: `Nota de crédito ${creditNote.number} en preparación (pendiente de autorización)`,
     actorId: actor?.id,
     actorRole: actor?.role,
   })

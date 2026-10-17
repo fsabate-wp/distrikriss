@@ -279,6 +279,19 @@ test('la reconciliacion tolera un centavo de diferencia aritmetica', () => {
   assert.throws(() => assertReconciled(totals, order), /no coincide/)
 })
 
+test('la reconciliacion de la nota de credito compara con el comprobante original', () => {
+  // Una nota de credito debe anular la factura por su mismo importe, no por el
+  // total actual del pedido (que pudo cambiar despues de facturarse).
+  const order = pedido([{ productId: 'p1', name: 'Papa', price: 10, quantity: 1, ivaRate: 15 }])
+  const { lines, totalDiscount } = buildLines(order, settingsBase)
+  const totals = computeTotals(lines, totalDiscount)
+  assert.equal(assertReconciled(totals, { total: totals.total }, 'comprobante original'), true)
+  assert.throws(
+    () => assertReconciled(totals, { total: totals.total + 1 }, 'comprobante original'),
+    /no coincide con el total del comprobante original/,
+  )
+})
+
 test('un pedido sin lineas no se puede facturar', () => {
   assert.throws(() => buildLines(pedido([]), settingsBase), /No hay lineas/)
   assert.throws(
