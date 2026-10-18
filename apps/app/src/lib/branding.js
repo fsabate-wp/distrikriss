@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { API_URL } from './config.js'
 
 const absolute = (u) => (u ? (u.startsWith('/') ? API_URL + u : u) : null)
 

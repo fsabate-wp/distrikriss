@@ -1,4 +1,5 @@
 import { api } from '../api/client.js'
+import { VAPID_PUBLIC_KEY as VAPID_KEY } from './config.js'
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -8,8 +9,6 @@ function urlBase64ToUint8Array(base64String) {
   for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i)
   return outputArray
 }
-
-const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
 
 function pushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && Boolean(VAPID_KEY)

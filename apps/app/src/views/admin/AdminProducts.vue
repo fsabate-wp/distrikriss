@@ -94,6 +94,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
 import { money } from '../../utils/format.js'
+import { API_URL } from '../../lib/config.js'
 
 const products = ref([])
 const loading = ref(true)
@@ -148,7 +149,7 @@ async function doImport() {
   try {
     const fd = new FormData()
     fd.append('file', importFile.value)
-    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/admin/products/import?mode=${importMode.value}`, {
+    const res = await fetch(`${API_URL}/api/admin/products/import?mode=${importMode.value}`, {
       method: 'POST',
       credentials: 'include',
       body: fd,
@@ -166,7 +167,7 @@ async function doImport() {
 
 async function downloadTemplate() {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/admin/products/import/template`, { credentials: 'include' })
+    const res = await fetch(`${API_URL}/api/admin/products/import/template`, { credentials: 'include' })
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

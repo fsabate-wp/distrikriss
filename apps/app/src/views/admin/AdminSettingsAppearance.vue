@@ -82,6 +82,7 @@ import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
 import { applyAccentColor, applySecondaryColor } from '../../lib/accent.js'
 import { useSettingsStore } from '../../stores/settings.js'
+import { API_URL } from '../../lib/config.js'
 
 const form = ref(null)
 const loading = ref(true)
@@ -91,7 +92,6 @@ const saved = ref(false)
 const brandUploading = ref(null)
 const settingsStore = useSettingsStore()
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const absolute = (u) => (u ? (u.startsWith('/') ? API_URL + u : u) : null)
 
 async function load() {

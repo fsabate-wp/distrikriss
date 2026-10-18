@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { API_URL } from '../lib/config.js'
 
 let isRefreshing = false
 let failedQueue = []

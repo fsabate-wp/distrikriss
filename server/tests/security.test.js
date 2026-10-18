@@ -180,3 +180,11 @@ test('el service worker no cachea datos personales', () => {
   assert.match(sw, /settings\|delivery/, 'la lista de endpoints publicos debe estar acotada')
   assert.match(sw, /caches\.delete\('api-cache'\)/, 'debe purgar la cache de API anterior')
 })
+
+test('el service worker no precachea la config del front', () => {
+  const vite = fs.readFileSync(fileURLToPath(new URL('../../apps/app/vite.config.js', import.meta.url)), 'utf8')
+  // config.js lleva la URL de la API y se escribe en el arranque, no en el build.
+  // Si entrara en el precache (el glob cubre **/*.js), el worker serviria la URL
+  // compilada — tipicamente http://localhost:4000 — aunque el contenedor la fije.
+  assert.match(vite, /globIgnores:\s*\[[^\]]*config\.js/, 'config.js debe quedar fuera del precache')
+})

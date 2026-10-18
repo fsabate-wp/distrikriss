@@ -227,8 +227,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/client.js'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { API_URL } from '../../lib/config.js'
 
 // Catálogo del SRI. El servidor rechaza cualquier tarifa que no esté aquí.
 const ivaRates = [0, 2, 3, 4, 5, 10, 12, 14, 15]

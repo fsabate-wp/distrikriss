@@ -42,6 +42,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import L from 'leaflet'
 import { useSettingsStore } from '../stores/settings.js'
 import { money } from '../utils/format.js'
+import { API_URL } from '../lib/config.js'
 
 const props = defineProps({
   modelValue: { type: Object, default: null },
@@ -121,7 +122,7 @@ function setupMarkers() {
 
 async function setupZones() {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/delivery/zones`)
+    const res = await fetch(`${API_URL}/api/delivery/zones`)
     const data = await res.json()
     zoneLayers = L.layerGroup().addTo(map)
     for (const zone of data.zones || []) {
@@ -172,7 +173,7 @@ async function checkDistance(lat, lng) {
   zoneError.value = ''
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/delivery/check?lat=${lat}&lng=${lng}`,
+      `${API_URL}/api/delivery/check?lat=${lat}&lng=${lng}`,
     )
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()

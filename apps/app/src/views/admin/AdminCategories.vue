@@ -83,6 +83,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client.js'
+import { API_URL } from '../../lib/config.js'
 
 const categories = ref([])
 const loading = ref(true)
@@ -116,7 +117,7 @@ async function upload(e) {
   try {
     const fd = new FormData()
     fd.append('image', file)
-    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/admin/uploads`, {
+    const res = await fetch(`${API_URL}/api/admin/uploads`, {
       method: 'POST',
       credentials: 'include',
       body: fd,

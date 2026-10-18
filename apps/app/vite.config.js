@@ -10,6 +10,9 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.js',
       injectManifest: {
+        // config.js se escribe en el arranque (no se compila) y lleva la URL de la
+        // API: si el service worker lo precacheara, serviria la del build viejo.
+        globIgnores: ['**/config.js'],
         globPatterns: ['**/*.{js,css,html,webp,png,svg,ico,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
