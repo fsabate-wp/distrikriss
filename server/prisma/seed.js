@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import 'dotenv/config'
+import { assertSeedAdminPassword, decisionAdminSeed, ADMIN_PASSWORD_POR_DEFECTO } from './seed-admin.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const prisma = new PrismaClient()
@@ -11,7 +12,6 @@ const prisma = new PrismaClient()
 const STORE = {
   name: process.env.ADMIN_NAME || 'Administrador',
   email: process.env.ADMIN_EMAIL || 'admin@distrikriss.com',
-  password: process.env.ADMIN_PASSWORD || 'distrikriss-admin',
   phone: process.env.ADMIN_PHONE || '0959841957',
 }
 
@@ -126,12 +126,26 @@ const legacyProducts = [
 
 async function main() {
   console.log('-> seed: admin')
-  const passwordHash = await bcrypt.hash(STORE.password, 10)
-  const admin = await prisma.user.upsert({
-    where: { phone: STORE.phone },
-    update: {},
-    create: { name: STORE.name, phone: STORE.phone, email: STORE.email, passwordHash, role: 'ADMIN' },
+  const { password, esPorDefecto } = assertSeedAdminPassword(process.env)
+  const passwordHash = await bcrypt.hash(password, 10)
+  const existente = await prisma.user.findUnique({ where: { phone: STORE.phone } })
+  const coincidePorDefecto = existente
+    ? await bcrypt.compare(ADMIN_PASSWORD_POR_DEFECTO, existente.passwordHash)
+    : false
+  const decision = decisionAdminSeed({
+    existe: Boolean(existente),
+    coincidePorDefecto,
+    esPorDefecto,
   })
+  let admin = existente
+  if (decision === 'crear') {
+    admin = await prisma.user.create({
+      data: { name: STORE.name, phone: STORE.phone, email: STORE.email, passwordHash, role: 'ADMIN' },
+    })
+  } else if (decision === 'rotar') {
+    admin = await prisma.user.update({ where: { phone: STORE.phone }, data: { passwordHash } })
+    console.log('   contrasena del admin rotada (seguia siendo la de por defecto)')
+  }
   console.log(`   admin listo (${admin.phone})`)
 
   console.log('-> seed: settings')

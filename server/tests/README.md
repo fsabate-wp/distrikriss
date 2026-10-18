@@ -147,7 +147,10 @@ pedirá reintroducirla. Las facturas ya autorizadas no se ven afectadas.
 | `SRI_SOAP_TIMEOUT_MS` | Tiempo máximo de espera al SRI (20 s) |
 
 En producción el arranque **falla** si faltan `JWT_SECRET`,
-`JWT_REFRESH_SECRET`, `ADMIN_PASSWORD` o `SRI_CERT_SECRET`.
+`JWT_REFRESH_SECRET`, `ADMIN_PASSWORD` o `SRI_CERT_SECRET`. El **seed** aplica la
+misma regla con `ADMIN_PASSWORD`: si en producción sigue sin definir (o con la
+contraseña de por defecto) no crea el admin, para no dejar una cuenta conocida.
+Si el admin ya existía con esa contraseña, el seed la rota al fijar la variable.
 
 ## IVA
 
@@ -207,7 +210,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 190 pruebas unitarias
+npm test                              # 198 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

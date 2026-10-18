@@ -304,7 +304,7 @@ su unidad de medida, sin inventar un empaque.
 ## Pruebas
 
 ```bash
-npm test                                  # 190 unitarias
+npm test                                  # 198 unitarias
 npm run test:e2e                          # comprobaciones contra PostgreSQL
 ```
 
