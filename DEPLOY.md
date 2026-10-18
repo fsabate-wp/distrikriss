@@ -76,5 +76,9 @@ mano para descartar el bundle antiguo.
 ## Cache de la API
 
 `/api/catalog/**` va con `NetworkOnly`: el precio lo decide el servidor y un
-catalogo de la cache puede enseñar una cifra que ya cambio. El resto de la API
-se cachea 60 segundos, solo por `GET` y nunca `/api/auth`.
+catalogo de la cache puede enseñar una cifra que ya cambio. De la API solo se
+cachean respuestas **publicas y sin usuario** (`/api/settings/**` y
+`/api/delivery/**`), por 60 segundos y solo por `GET`. Los endpoints con datos
+personales (`/api/orders`, `/api/addresses`, `/api/admin`, `/api/push`) y la
+sesion (`/api/auth`) nunca se cachean: antes quedaban en la Cache Storage del
+dispositivo y sobrevivian al cierre de sesion.
