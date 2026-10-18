@@ -122,7 +122,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client.js'
 import { useCartStore } from '../stores/cart.js'
-import { money, discountedPrice, precioPorUnidad, unidadesDeVenta, descripcionCantidad, nombreUnidadVenta, pluralizar } from '../utils/format.js'
+import { money, discountedPrice, precioPorUnidad, unidadesDeVenta, descripcionCantidad, nombreUnidadVenta, pluralizar, pasoDeVenta } from '../utils/format.js'
 
 const route = useRoute()
 const cart = useCartStore()
@@ -135,7 +135,10 @@ const finalPrice = computed(() => discountedPrice(product.value?.price, product.
 const hasDiscount = computed(() => Number(product.value?.discount) > 0 && Number(product.value?.discount) < 100)
 const isOutOfStock = computed(() => product.value != null && Number(product.value.stock) === 0)
 const minQty = computed(() => Number(product.value?.minQuantity) || 1)
-const stepQty = computed(() => Number(product.value?.stepQuantity) || 1)
+// El paso es el de venta, no el que quedó en el catálogo: a granel el paso es el
+// empaque (minQuantity). Con el stepQuantity crudo, "-" o "escribir 700 g" en una
+// bandeja de 635 darían una cantidad que el servidor rechaza.
+const stepQty = computed(() => pasoDeVenta(product.value?.minQuantity, product.value?.stepQuantity))
 /**
  * ¿El precio es el de un empaque y no el de una unidad de medida?
  *
