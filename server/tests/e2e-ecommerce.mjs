@@ -253,6 +253,14 @@ await prisma.product.deleteMany({
   check(typeof inv2.invoice.total === 'number', 'expone el total facturado')
   check(inv2.invoice.message === null, 'sin avisos cuando ya esta autorizado')
 
+  // El detalle del pedido lleva un resumen del comprobante, no el XML firmado:
+  // el XML solo se sirve por sus endpoints (RIDE/descarga), no colgando de cada
+  // pedido.
+  r = await fetch(`${BASE}/api/orders/${orderId}`, { headers: c1 })
+  const detalle = await r.json()
+  check(detalle.order?.invoice?.status === 'AUTHORIZED', 'el pedido trae el resumen del comprobante')
+  check(detalle.order?.invoice?.xml === undefined, 'pero no filtra el XML del SRI')
+
   // Una vez autorizada, cancelar deja de ser libre: la factura ya existe.
   r = await sesion('POST', `/api/orders/${orderId}/cancel`)
   const canc = await r.json().catch(() => null)

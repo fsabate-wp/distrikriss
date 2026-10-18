@@ -22,6 +22,7 @@ import { sriEndpoints } from '../lib/sri/client.js'
 import { isValidIvaRate, IVA_CODES } from '../lib/sri/xml.js'
 import { renderRide } from '../lib/sri/ride.js'
 import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
+import { invoiceSummarySelect } from '../lib/sri/selects.js'
 import { encryptSecret, decryptSecret, fingerprint, encryptionAvailable } from '../lib/crypto.js'
 import { recordAudit, redactSettings } from '../lib/audit.js'
 import { stockLimitado, STOCK_SIN_LIMITE } from '../lib/stock.js'
@@ -44,7 +45,8 @@ const orderInclude = {
   user: { select: { id: true, name: true, phone: true, email: true } },
   items: true,
   events: { orderBy: { createdAt: 'asc' } },
-  invoice: true,
+  // Resumen del comprobante: el panel no necesita el XML en cada pedido.
+  invoice: { select: invoiceSummarySelect },
 }
 
 const toNumber = (v) => Number(v)

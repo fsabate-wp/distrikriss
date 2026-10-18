@@ -18,6 +18,7 @@ import { isValidIvaRate } from '../lib/sri/xml.js'
 import { renderRide } from '../lib/sri/ride.js'
 import { buildLines, buildTaxGroups, computeTotals, ivaGlobal } from '../lib/sri/totals.js'
 import { INVOICE_STATUS_LABELS, invoiceMessageFor } from '../lib/sri/labels.js'
+import { invoiceSummarySelect } from '../lib/sri/selects.js'
 import { stockLimitado, alcanzaElStock } from '../lib/stock.js'
 import { limits } from '../middleware/auth.js'
 
@@ -180,7 +181,8 @@ const orderInclude = {
   items: true,
   events: { orderBy: { createdAt: 'desc' } },
   address: true,
-  invoice: true,
+  // Sin el XML firmado: el cliente ve el resumen del comprobante, no el documento.
+  invoice: { select: invoiceSummarySelect },
 }
 
 router.post('/', limits.checkout, async (req, res, next) => {
