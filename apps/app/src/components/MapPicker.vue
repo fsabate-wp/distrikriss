@@ -133,7 +133,11 @@ async function setupZones() {
         weight: 2,
         dashArray: '6 6',
       }).addTo(zoneLayers)
-      poly.bindTooltip(zone.name, { permanent: false })
+      // Un string en bindTooltip se interpreta como HTML: un nombre de zona con
+      // marcado ejecutaria codigo en el mapa. Se pasa un nodo de texto.
+      const etiqueta = document.createElement('span')
+      etiqueta.textContent = zone.name || ''
+      poly.bindTooltip(etiqueta, { permanent: false })
     }
   } catch {
     // noop
