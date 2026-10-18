@@ -16,7 +16,7 @@ import { sendWhatsApp, getStorePhone } from '../lib/whatsapp.js'
 import { validateIdentifier } from '../lib/sri/ruc.js'
 import { isValidIvaRate } from '../lib/sri/xml.js'
 import { renderRide } from '../lib/sri/ride.js'
-import { buildLines, buildTaxGroups, computeTotals } from '../lib/sri/totals.js'
+import { buildLines, buildTaxGroups, computeTotals, ivaGlobal } from '../lib/sri/totals.js'
 import { INVOICE_STATUS_LABELS, invoiceMessageFor } from '../lib/sri/labels.js'
 import { stockLimitado, alcanzaElStock } from '../lib/stock.js'
 import { limits } from '../middleware/auth.js'
@@ -261,7 +261,7 @@ router.post('/', limits.checkout, async (req, res, next) => {
       cantidadPorProducto.set(item.productId, round2(previo + item.quantity))
     }
 
-    const globalIva = Number(settings.sriIvaRate) || 15
+    const globalIva = ivaGlobal(settings)
     if (!isValidIvaRate(globalIva)) {
       // Si la tarifa global no existe en el catálogo del SRI, cualquier factura
       // saldría con un <tarifa> que el SRI rechaza. Mejor bloquear el pedido.

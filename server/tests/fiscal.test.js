@@ -12,7 +12,7 @@ import {
   round2,
   IVA_CODES,
 } from '../src/lib/sri/xml.js'
-import { buildLines, buildTaxGroups, computeTotals, assertReconciled } from '../src/lib/sri/totals.js'
+import { buildLines, buildTaxGroups, computeTotals, assertReconciled, ivaGlobal } from '../src/lib/sri/totals.js'
 
 const settingsBase = {
   sriIvaRate: 15,
@@ -56,6 +56,22 @@ test('una tarifa de IVA inexistente lanza en lugar de caer a 15%', () => {
     assert.throws(() => taxFor(tasa), /catalogo del SRI/)
   }
   assert.throws(() => buildLines(pedido([{ productId: 'p1', name: 'Papa', price: 1, quantity: 1, ivaRate: 8 }]), settingsBase), /no es válida/)
+})
+
+test('la tarifa global 0% no se confunde con "sin configurar"', () => {
+  // El defecto: `Number(settings.sriIvaRate) || 15` convertía un IVA 0% (tarifa
+  // válida del SRI) en 15%, y el comprobante declaraba una tarifa que el negocio
+  // no había elegido. Solo un valor ausente o no numérico cae al 15% por defecto.
+  assert.equal(ivaGlobal({ sriIvaRate: 0 }), 0)
+  assert.equal(ivaGlobal({ sriIvaRate: '0' }), 0)
+  assert.equal(ivaGlobal({ sriIvaRate: null }), 15)
+  assert.equal(ivaGlobal({}), 15)
+  assert.equal(ivaGlobal({ sriIvaRate: 'no-numero' }), 15)
+
+  const order = pedido([{ productId: 'p1', name: 'Papa', price: 10, quantity: 1 }])
+  const { lines } = buildLines(order, { ...settingsBase, sriIvaRate: 0 })
+  assert.equal(lines[0].taxRate, 0)
+  assert.equal(lines[0].taxValue, 0)
 })
 
 test('precioUnitario conserva los decimales que hacen cuadrar la linea', () => {

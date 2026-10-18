@@ -18,6 +18,22 @@ import { descripcionFactura, descripcionCantidadVenta, anexoUnidadVenta } from '
 
 export const DELIVERY_LINE_CODE = 'SERVICIO-ENTREGA'
 export const DELIVERY_LINE_DESCRIPTION = 'Servicio de entrega a domicilio'
+export const IVA_GLOBAL_POR_DEFECTO = 15
+
+/**
+ * Tarifa global de IVA configurada en el panel.
+ *
+ * El 0% es una tarifa válida del SRI, así que no puede confundirse con "sin
+ * configurar": `Number(x) || 15` convertía en 15 un 0 legítimo y el comprobante
+ * declaraba una tarifa que el negocio no eligió. El valor por defecto se usa
+ * solo cuando el ajuste falta o no es un número.
+ */
+export function ivaGlobal(settings) {
+  const raw = settings?.sriIvaRate
+  if (raw === null || raw === undefined || raw === '') return IVA_GLOBAL_POR_DEFECTO
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : IVA_GLOBAL_POR_DEFECTO
+}
 
 /** Exige que la tarifa de IVA exista en el catalogo del SRI. */
 export function resolveRate(rate, fallback = 15) {
@@ -30,7 +46,7 @@ export function resolveRate(rate, fallback = 15) {
 
 /** Convierte el detalle del pedido en lineas fiscales. */
 export function buildLines(order, settings) {
-  const globalRate = resolveRate(Number(settings.sriIvaRate) || 15, 15)
+  const globalRate = resolveRate(ivaGlobal(settings))
   const deliveryTaxable = settings.sriDeliveryTaxable !== false
   const lines = []
   let totalDiscount = 0

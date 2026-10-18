@@ -155,6 +155,9 @@ Las tarifas admitidas son las del catálogo del SRI: **0, 2, 3, 4, 5, 10, 12,
 14 y 15 %**. Una tarifa fuera de esa lista se rechaza al guardar el producto y
 al emitir, en vez de caer a 15 % en silencio.
 
+La tarifa global del negocio se toma tal cual: **0 % es una tarifa válida**, no
+un "sin configurar". Solo un ajuste ausente o no numérico usa el 15 % por defecto.
+
 El precio del catálogo se trata como **IVA incluido** y es el de la **unidad
 mínima**: una bandeja de 400 g a $1 son $0.0025 por gramo. El descuento se
 aplica en el servidor y `OrderItem.price` guarda el precio por unidad ya
@@ -200,7 +203,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 184 pruebas unitarias
+npm test                              # 185 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```
