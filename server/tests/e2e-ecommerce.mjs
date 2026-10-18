@@ -517,24 +517,38 @@ await prisma.product.deleteMany({
   check((await prisma.order.findUnique({ where: { id: dobleId } })).status === 'CANCELLED', 'el pedido queda cancelado')
   check([resA.status, resB.status].includes(200), `una de las dos se acepta (${resA.status}/${resB.status})`)
 
+  console.log('\n=== 6e. Cerrar sesion revoca el refresh token ===')
+  const revEmail = rand('rev') + '@test.com'
+  const s3 = cliente()
+  await s3('POST', '/api/auth/register', {
+    name: 'Sesion Revoc', email: revEmail, password: pass, phone: rand('09'),
+  })
+  const refreshViejo = (s3.cookie.match(/refresh_token=([^;]+)/) || [])[1]
+  check(Boolean(refreshViejo), 'el registro deja un refresh token')
+  r = await fetch(`${BASE}/api/auth/refresh`, { method: 'POST', headers: { Cookie: `refresh_token=${refreshViejo}` } })
+  check(r.status === 200, `el refresh vale antes del logout (${r.status})`)
+  await fetch(`${BASE}/api/auth/logout`, { method: 'POST', headers: { Cookie: `refresh_token=${refreshViejo}` } })
+  r = await fetch(`${BASE}/api/auth/refresh`, { method: 'POST', headers: { Cookie: `refresh_token=${refreshViejo}` } })
+  check(r.status === 401, `tras el logout el refresh viejo se rechaza (${r.status})`)
+
   console.log('\n=== 7. El catalogo sigue abierto ===')
   const catNo = await fetch(`${BASE}/api/catalog/products?limit=200`)
   check(catNo.status === 200, 'el catalogo es publico sin sesion')
 
-  datos = { email, email2, cat, zona }
+  datos = { email, email2, revEmail, cat, zona }
 } finally {
   await server.kill()
 }
 
 console.log('\n=== Limpieza ===')
 if (datos) {
-  await prisma.order.deleteMany({ where: { user: { email: { in: [datos.email, datos.email2] } } } })
+  await prisma.order.deleteMany({ where: { user: { email: { in: [datos.email, datos.email2, datos.revEmail] } } } })
   await prisma.product.deleteMany({
       where: { name: { in: ['Papa para la RIDE', 'Jugo de Mango', 'Champiñones en bandeja', 'Ajo al kilo'] } },
     })
   await prisma.category.deleteMany({ where: { id: datos.cat.id } })
   await prisma.deliveryZone.deleteMany({ where: { id: datos.zona.id } })
-  await prisma.user.deleteMany({ where: { email: { in: [datos.email, datos.email2] } } })
+  await prisma.user.deleteMany({ where: { email: { in: [datos.email, datos.email2, datos.revEmail] } } })
   console.log('  datos de prueba eliminados')
 }
 await prisma.$disconnect()

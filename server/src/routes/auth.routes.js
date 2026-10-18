@@ -98,6 +98,12 @@ router.post('/refresh', async (req, res, next) => {
     if (!user || !user.active) {
       return res.status(401).json({ error: 'Sesión inválida' })
     }
+    // La versión de sesión sube al cerrar sesión: un refresh token emitido antes
+    // (aunque no haya caducado) deja de valer. Así el logout revoca de verdad.
+    if ((payload.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+      return res.status(401).json({ error: 'Sesión cerrada, inicia sesión de nuevo' })
+    }
+    // Rotación: cada refresco emite un token nuevo con la versión vigente.
     setAuthCookies(res, user)
     res.json({ user: publicUser(user) })
   } catch {
@@ -105,7 +111,21 @@ router.post('/refresh', async (req, res, next) => {
   }
 })
 
-router.post('/logout', (req, res) => {
+router.post('/logout', async (req, res) => {
+  // Revocar los refresh tokens del usuario: sin esto, un token robado seguiría
+  // sirviendo aunque el cliente borre sus cookies.
+  try {
+    const token = req.cookies?.refresh_token
+    if (token) {
+      const payload = verifyRefreshToken(token)
+      await prisma.user.update({
+        where: { id: payload.sub },
+        data: { tokenVersion: { increment: 1 } },
+      })
+    }
+  } catch {
+    // Sin token válido no hay nada que revocar; el cierre de cookies basta.
+  }
   // clearCookie no admite maxAge (Express 5 lo ignora y avisa por consola), asi
   // que se reutilizan las opciones sin ese campo.
   const refreshOpts = { ...refreshCookieOptions('/api/auth') }

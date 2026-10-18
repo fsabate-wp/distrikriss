@@ -195,6 +195,10 @@ defender.
   que valida `requireStepUp`, así que un token robado no puede fabricarse la
   confirmación enviando una fecha y un nonce inventados.
 - Las peticiones que usan cookies se validan contra `Origin` (protección CSRF).
+- La sesión usa un **access token corto** (15 min) renovado con un refresh token.
+  El refresh lleva la **versión de sesión** del usuario (`User.tokenVersion`), que
+  sube al cerrar sesión: el logout **revoca de verdad** los refresh tokens, así que
+  uno robado deja de servir. En producción la cookie va siempre `Secure`.
 - El panel nunca se cachea (`Cache-Control: no-store`).
 - Hay límites de peticiones por IP en login, pedidos, pruebas del SRI,
   reintentos y subida de certificados.
@@ -203,7 +207,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 186 pruebas unitarias
+npm test                              # 190 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

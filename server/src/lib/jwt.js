@@ -12,7 +12,9 @@ export function signAccessToken(user) {
 
 export function signRefreshToken(user) {
   return jwt.sign(
-    { sub: user.id },
+    // `ver` es la versión de sesión del usuario. Si al verificar no coincide con
+    // la de la base, el token fue revocado (cierre de sesión) y ya no vale.
+    { sub: user.id, ver: user.tokenVersion ?? 0 },
     config.jwt.refreshSecret,
     { expiresIn: config.jwt.refreshTtl },
   )
@@ -73,7 +75,9 @@ function ttlToMs(ttl) {
 export function accessCookieOptions(path = '/') {
   return {
     httpOnly: true,
-    secure: config.cookieSecure,
+    // En producción la cookie va SIEMPRE Secure: con SameSite=None el navegador
+    // la exige, y si faltaba COOKIE_SECURE la sesión no funcionaba en silencio.
+    secure: config.isProd || config.cookieSecure,
     sameSite: config.isProd ? 'none' : 'lax',
     maxAge: ttlToMs(config.jwt.accessTtl),
     path,
@@ -83,7 +87,7 @@ export function accessCookieOptions(path = '/') {
 export function refreshCookieOptions(path = '/') {
   return {
     httpOnly: true,
-    secure: config.cookieSecure,
+    secure: config.isProd || config.cookieSecure,
     sameSite: config.isProd ? 'none' : 'lax',
     maxAge: ttlToMs(config.jwt.refreshTtl),
     path,

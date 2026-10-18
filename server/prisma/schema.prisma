@@ -56,6 +56,9 @@ model User {
   passwordHash String
   role         Role               @default(CLIENT)
   active       Boolean            @default(true)
+  // Sube al cerrar sesión: invalida todos los refresh tokens emitidos antes (un
+  // token robado deja de servir). Los access tokens caducan solos y pronto.
+  tokenVersion Int                @default(0)
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   addresses    Address[]

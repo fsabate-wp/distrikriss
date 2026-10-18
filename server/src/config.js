@@ -8,7 +8,9 @@ const DEFAULTS = {
   nodeEnv: 'development',
   jwtSecret: 'dev-secret',
   jwtRefreshSecret: 'dev-refresh-secret',
-  accessTtl: '7d',
+  // El access token corto: el refresh lo renueva solo. Así una baja o un cambio
+  // de rol aplican en minutos, no en días, y el rol no viaja tanto tiempo.
+  accessTtl: '15m',
   refreshTtl: '30d',
   adminPassword: 'distrikriss-admin',
 }
