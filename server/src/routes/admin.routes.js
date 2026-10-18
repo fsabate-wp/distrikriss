@@ -1239,16 +1239,23 @@ router.get('/invoices/:id/ride', async (req, res, next) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
-      include: { order: { include: { items: true } } },
+      include: {
+        order: { include: { items: true } },
+        // La nota de crédito no tiene pedido propio: sus líneas salen de la
+        // factura que anula, así que la RIDE se arma con el pedido del original.
+        creditedBy: { include: { order: { include: { items: true } } } },
+      },
     })
     if (!invoice) return res.status(404).json({ error: 'Comprobante no encontrado' })
+    const order = invoice.order || invoice.creditedBy?.order
+    if (!order) return res.status(400).json({ error: 'El comprobante no tiene un pedido asociado' })
     const settings = await prisma.settings.findUnique({ where: { id: 1 } })
     if (!settings) return res.status(500).json({ error: 'Configuración no encontrada' })
 
-    const { lines, totalDiscount } = buildLines(invoice.order, settings)
+    const { lines, totalDiscount } = buildLines(order, settings)
     const groups = buildTaxGroups(lines)
     const totals = computeTotals(lines, totalDiscount)
-    const pdf = await renderRide({ invoice, order: invoice.order, settings, lines, groups, totals })
+    const pdf = await renderRide({ invoice, order, settings, lines, groups, totals })
     await recordAudit({ req, action: 'SRI_RIDE_DOWNLOADED', target: invoice.id })
 
     const etiqueta = invoice.docType === 'NOTA_CREDITO' ? 'nota-credito' : 'factura'

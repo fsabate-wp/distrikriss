@@ -196,7 +196,9 @@ async function main() {
 
   // ---------------------------------------------------------------- 2
   console.log('\n=== 2. Stock nunca queda negativo ===')
-  check('lenteja tiene 4 en stock', (await prisma.product.findUnique({ where: { id: lenteja.id } })).stock === 4)
+  // El stock es decimal (comparte unidad con la cantidad), así que Prisma lo
+  // devuelve como Decimal: hay que pasarlo a número antes de comparar.
+  check('lenteja tiene 4 en stock', Number((await prisma.product.findUnique({ where: { id: lenteja.id } })).stock) === 4)
 
   const pedidosStock = await Promise.allSettled(
     Array.from({ length: 6 }, (_, i) =>
@@ -211,7 +213,7 @@ async function main() {
     ),
   )
   const okStock = pedidosStock.filter((p) => p.status === 'fulfilled').length
-  const stockFinal = (await prisma.product.findUnique({ where: { id: papa.id } })).stock
+  const stockFinal = Number((await prisma.product.findUnique({ where: { id: papa.id } })).stock)
   check(`6 pedidos de 3 sobre 10 unidades -> ${okStock} aceptados`, okStock === 3, `aceptados=${okStock}`)
   check(`el stock queda en 1 (10 - 9)`, stockFinal === 1, `stock=${stockFinal}`)
   check('el stock nunca es negativo', stockFinal >= 0, `stock=${stockFinal}`)

@@ -306,8 +306,16 @@ async function main() {
   console.log('\n=== Limpieza ===')
   const ids = [order.id, orderConDescuento.id, orderRoto.id, ...(creditoOrder ? [creditoOrder.id] : [])]
   const invoices = await prisma.invoice.findMany({ where: { orderId: { in: ids } }, select: { id: true } })
-  await prisma.invoiceEvent.deleteMany({ where: { invoiceId: { in: invoices.map((i) => i.id) } } })
-  await prisma.invoice.deleteMany({ where: { orderId: { in: ids } } })
+  const invoiceIds = invoices.map((i) => i.id)
+  // La nota de crédito no tiene orderId: cuelga del comprobante original, así que
+  // hay que borrarla por creditedById o quedaría huérfana entre corridas.
+  const notas = await prisma.invoice.findMany({
+    where: { creditedById: { in: invoiceIds } },
+    select: { id: true },
+  })
+  const aBorrar = [...invoiceIds, ...notas.map((n) => n.id)]
+  await prisma.invoiceEvent.deleteMany({ where: { invoiceId: { in: aBorrar } } })
+  await prisma.invoice.deleteMany({ where: { id: { in: aBorrar } } })
   await prisma.orderEvent.deleteMany({ where: { orderId: { in: ids } } })
   await prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } })
   await prisma.order.deleteMany({ where: { id: { in: ids } } })

@@ -518,7 +518,9 @@ router.get('/:id/ride', async (req, res, next) => {
     if (!invoice || invoice.order.userId !== req.user.id) {
       return res.status(404).json({ error: 'Comprobante no encontrado' })
     }
-    if (invoice.status !== 'AUTHORIZED') {
+    // CREDITED también vale: la factura fue autorizada y luego anulada con una
+    // nota de crédito. El comprador conserva su RIDE original.
+    if (!['AUTHORIZED', 'CREDITED'].includes(invoice.status)) {
       return res.status(409).json({
         error: 'Tu comprobante todavía no ha sido autorizado por el SRI',
         status: invoice.status,

@@ -275,8 +275,10 @@ model DeliveryZone {
 
 model Invoice {
   id                  String         @id @default(cuid())
-  orderId             String         @unique
-  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // La factura de un pedido es unica. La NOTA DE CREDITO que la anula cuelga de
+  // la factura (creditedById) y no del pedido, asi que va con orderId NULL.
+  orderId             String?        @unique
+  order               Order?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   docType             SriDocType     @default(FACTURA)
   establishment       String
   emissionPoint       String

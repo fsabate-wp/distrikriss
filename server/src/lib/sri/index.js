@@ -329,6 +329,10 @@ export async function submitInvoice(invoiceId, { actor = null, force = false } =
   let cert
   try {
     cert = loadCertificate(settings)
+    // `loadCertificate` devuelve null cuando no hay certificado configurado:
+    // tratarlo como error de certificado (en vez de firmar con null y reventar)
+    // deja el comprobante en un estado que el panel entiende.
+    if (!cert) throw new Error('No hay un certificado configurado')
   } catch (err) {
     // Antes este error se tragaba y el panel informaba "no se configuró el
     // certificado", que es falso: lo que suele fallar es la contraseña o que el
@@ -501,7 +505,8 @@ export async function issueCreditNote(invoiceId, { reason, actor = null } = {}) 
 
   const creditNote = await prisma.invoice.create({
     data: {
-      orderId: order.id,
+      // Sin orderId: el pedido ya tiene su factura (Invoice.orderId es unico) y
+      // la nota se enlaza al comprobante que anula por creditedById.
       docType: 'NOTA_CREDITO',
       establishment,
       emissionPoint,

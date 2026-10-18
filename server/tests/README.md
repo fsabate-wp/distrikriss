@@ -63,6 +63,11 @@ después de facturarse, no se emite. La factura pasa a `CREDITED` **solo cuando
 el SRI autoriza la nota**; mientras tanto sigue `AUTHORIZED` (vigente), porque
 una nota fallida no anula nada. Un comprobante admite una sola nota de crédito.
 
+La nota es un comprobante **sin pedido propio** (`orderId` queda en `NULL`): el
+pedido ya tiene su factura (`Invoice.orderId` es único), así que la nota se enlaza
+al comprobante que anula por `creditedById`. Su RIDE se arma con el pedido de la
+factura original.
+
 ## RIDE
 
 La RIDE es lo que permite a una persona o empresa **deducir IVA**. Sin ella la
