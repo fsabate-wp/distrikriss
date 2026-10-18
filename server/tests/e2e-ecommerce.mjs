@@ -493,6 +493,22 @@ await prisma.product.deleteMany({
   check(typeof ajoCatalogo?.stock === 'number', `el stock del catalogo es numero (${typeof ajoCatalogo?.stock})`)
   check(ajoCatalogo?.stock === 1, `y vale 1 (${ajoCatalogo?.stock})`)
 
+  console.log('\n=== 6d. Cancelar dos veces no duplica el stock ===')
+  // Dos cancelaciones simultaneas (dos pestanas, o el cliente y el panel) deben
+  // devolver el stock una sola vez: el UPDATE condicional de la transicion lo
+  // garantiza. Sin el, ambas pasaban y el stock se incrementaba dos veces.
+  const doble = await pedir([{ productId: prod.id, quantity: 1 }])
+  const dobleId = doble.body?.order?.id
+  const antesCancel = Number((await prisma.product.findUnique({ where: { id: prod.id } })).stock)
+  const [resA, resB] = await Promise.all([
+    fetch(`${BASE}/api/orders/${dobleId}/cancel`, { method: 'POST', headers: c1 }),
+    fetch(`${BASE}/api/orders/${dobleId}/cancel`, { method: 'POST', headers: c1 }),
+  ])
+  const despuesCancel = Number((await prisma.product.findUnique({ where: { id: prod.id } })).stock)
+  check(despuesCancel - antesCancel === 1, `cancelar dos veces devuelve el stock una sola vez (${antesCancel} -> ${despuesCancel})`)
+  check((await prisma.order.findUnique({ where: { id: dobleId } })).status === 'CANCELLED', 'el pedido queda cancelado')
+  check([resA.status, resB.status].includes(200), `una de las dos se acepta (${resA.status}/${resB.status})`)
+
   console.log('\n=== 7. El catalogo sigue abierto ===')
   const catNo = await fetch(`${BASE}/api/catalog/products?limit=200`)
   check(catNo.status === 200, 'el catalogo es publico sin sesion')

@@ -223,30 +223,43 @@ router.patch('/orders/:id/status', async (req, res, next) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const next = await tx.order.update({
-        where: { id: order.id },
-        data: { status, ...(paymentStatus ? { paymentStatus } : {}) },
-        include: orderInclude,
-      })
-      await tx.orderEvent.create({
-        data: {
-          orderId: order.id,
-          status,
-          note: note || statusNotes[status] || null,
-        },
-      })
-      if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
-        for (const item of order.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } })
-          if (product && stockLimitado(product.stock)) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stock: { increment: item.quantity } },
-            })
+      // Al cancelar, la restauración del stock va condicionada a la transición
+      // atómica: el guard `status != CANCELLED` evita devolver el stock dos veces
+      // si otra cancelación (el cliente o dos pestañas del panel) se adelanta.
+      let transicion = true
+      if (status === 'CANCELLED') {
+        const { count } = await tx.order.updateMany({
+          where: { id: order.id, status: { not: 'CANCELLED' } },
+          data: { status, ...(paymentStatus ? { paymentStatus } : {}) },
+        })
+        transicion = count === 1
+      } else {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status, ...(paymentStatus ? { paymentStatus } : {}) },
+        })
+      }
+      if (transicion) {
+        await tx.orderEvent.create({
+          data: {
+            orderId: order.id,
+            status,
+            note: note || statusNotes[status] || null,
+          },
+        })
+        if (status === 'CANCELLED') {
+          for (const item of order.items) {
+            const product = await tx.product.findUnique({ where: { id: item.productId } })
+            if (product && stockLimitado(product.stock)) {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              })
+            }
           }
         }
       }
-      return next
+      return tx.order.findUnique({ where: { id: order.id }, include: orderInclude })
     })
     res.json({ order: withTotals(updated) })
 

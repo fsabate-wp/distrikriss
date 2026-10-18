@@ -694,11 +694,20 @@ router.post('/:id/cancel', async (req, res, next) => {
       })
     }
     const updated = await prisma.$transaction(async (tx) => {
-      const cancelled = await tx.order.update({
-        where: { id: order.id },
+      // Cancelar es una transición única. El UPDATE condicional (en vez de un
+      // update a ciegas) hace que, si dos cancelaciones coinciden —el cliente y
+      // el panel, o dos pestañas—, solo una devuelva el stock. Sin esto, ambas
+      // pasaban la comprobación previa y el stock se incrementaba dos veces.
+      const { count } = await tx.order.updateMany({
+        where: { id: order.id, status: { in: ['PENDING', 'CONFIRMED'] } },
         data: { status: 'CANCELLED' },
-        include: orderInclude,
       })
+      if (count === 0) {
+        throw Object.assign(new Error('El pedido ya no puede cancelarse'), {
+          status: 400,
+          code: 'ALREADY_CANCELLED',
+        })
+      }
       await tx.orderEvent.create({
         data: { orderId: order.id, status: 'CANCELLED', note: statusNotes.CANCELLED },
       })
@@ -711,7 +720,7 @@ router.post('/:id/cancel', async (req, res, next) => {
           })
         }
       }
-      return cancelled
+      return tx.order.findUnique({ where: { id: order.id }, include: orderInclude })
     })
     res.json({ order: withTotals(updated) })
 
