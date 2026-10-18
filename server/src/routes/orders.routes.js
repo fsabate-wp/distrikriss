@@ -599,8 +599,9 @@ router.get('/repeat/last', async (req, res, next) => {
     const ultimo = await prisma.order.findFirst({
       where: {
         userId: req.user.id,
+        // Solo pedidos que el negocio ya aceptó: un carrito PENDING (o un
+        // CANCELLED) no es "lo de siempre" que el cliente quiera repetir.
         status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'] },
-        status: { not: 'CANCELLED' },
       },
       orderBy: { createdAt: 'desc' },
       include: { items: true },

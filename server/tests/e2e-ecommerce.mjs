@@ -260,6 +260,10 @@ await prisma.product.deleteMany({
   check(canc?.code === 'INVOICE_AUTHORIZED', `con el codigo que el panel entiende (${canc?.code})`)
 
   console.log('\n=== 5. Repetir pedido ===')
+  // El pedido quedo PENDING al crearse, y "lo de siempre" solo mira pedidos ya
+  // aceptados por el negocio (CONFIRMED o posteriores), asi que se prueba como
+  // un pedido que la tienda ya confirmo.
+  await prisma.order.update({ where: { id: orderId }, data: { status: 'CONFIRMED' } })
   r = await fetch(`${BASE}/api/orders/repeat/last`, { headers: c1 })
   const rep = await r.json()
   check(r.status === 200, `la ruta responde: ${r.status}`)
@@ -288,6 +292,14 @@ await prisma.product.deleteMany({
   await prisma.order.update({ where: { id: orderId }, data: { status: 'CANCELLED' } })
   r = await fetch(`${BASE}/api/orders/repeat/last`, { headers: c1 })
   check((await r.json()).available === false, 'un pedido cancelado no se propone para repetir')
+  await prisma.order.update({ where: { id: orderId }, data: { status: cancelado.status } })
+
+  // Tampoco un pedido sin confirmar: "lo de siempre" es lo que el negocio ya
+  // acepto. Si un PENDING (carrito recien creado) contara, se repetiria un
+  // pedido que nunca llego a tramitarse.
+  await prisma.order.update({ where: { id: orderId }, data: { status: 'PENDING' } })
+  r = await fetch(`${BASE}/api/orders/repeat/last`, { headers: c1 })
+  check((await r.json()).available === false, 'un pedido sin confirmar (PENDING) no se propone para repetir')
   await prisma.order.update({ where: { id: orderId }, data: { status: cancelado.status } })
 
   console.log('\n=== 6. Busqueda sin tildes ===')
