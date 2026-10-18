@@ -203,7 +203,7 @@ defender.
 ## Pruebas
 
 ```bash
-npm test                              # 185 pruebas unitarias
+npm test                              # 186 pruebas unitarias
 npm run test:e2e                      # comprobaciones contra PostgreSQL
 node server/tests/preflight-sri.mjs   # alcance al SRI y formato de clave
 ```

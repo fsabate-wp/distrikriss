@@ -35,21 +35,32 @@ registerRoute(
   }),
 )
 
-// El resto de la API sí puede venir de caché un momento, pero nunca la sesión:
-// un `/api/auth/me` cacheado hace que la app crea que hay una sesión viva que el
-// servidor ya no reconoce. Solo GET, para que un POST de pedido jamás se guarde.
+// Caché de API: SOLO endpoints públicos. Nunca la sesión ni datos personales.
+//
+// Antes se cacheaba "el resto de la API" (todo salvo /api/auth), lo que incluía
+// /api/orders y /api/addresses: el pedido y las direcciones de una persona
+// quedaban en la Cache Storage del dispositivo y sobrevivían al cierre de sesión,
+// a la vista de quien usara ese navegador después. El catálogo tampoco se cachea
+// (su precio decide lo que se cobra). Aquí solo entran respuestas sin usuario.
+const CACHE_PUBLICA = /^\/api\/(settings|delivery)\//
 registerRoute(
   ({ url, request, sameOrigin }) =>
-    sameOrigin && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth') && request.method === 'GET',
+    sameOrigin && request.method === 'GET' && CACHE_PUBLICA.test(url.pathname),
   new NetworkFirst({
-    cacheName: 'api-cache',
+    cacheName: 'public-api',
     networkTimeoutSeconds: 4,
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 }),
+      new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 60 }),
     ],
   }),
 )
+
+// Al activar una versión nueva se purga la caché de API anterior: podía contener
+// respuestas con datos personales de cuando se cacheaba toda la API.
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.delete('api-cache'))
+})
 
 self.addEventListener('push', (event) => {
   let payload = {}

@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 /**
  * Las protecciones HTTP se prueban de forma aislada, sin levantar el servidor.
@@ -167,4 +169,14 @@ test('el limitador de login es mas estricto que el de lectura', () => {
   assert.ok(limits.sriTest, 'debe existir el limite de prueba SRI')
   assert.ok(limits.invoiceRetry, 'debe existir el limite de reintento de facturas')
   assert.ok(limits.checkout, 'debe existir el limite de pedidos')
+})
+
+test('el service worker no cachea datos personales', () => {
+  const sw = fs.readFileSync(fileURLToPath(new URL('../../apps/app/src/sw.js', import.meta.url)), 'utf8')
+  // Cacheaba "toda la API salvo auth", lo que metia /api/orders y /api/addresses
+  // en la Cache Storage del dispositivo: datos personales que sobrevivian al
+  // cierre de sesion. Ahora la cache de API solo cubre endpoints publicos.
+  assert.doesNotMatch(sw, /startsWith\('\/api\/'\)/, 'no debe cachear toda la API')
+  assert.match(sw, /settings\|delivery/, 'la lista de endpoints publicos debe estar acotada')
+  assert.match(sw, /caches\.delete\('api-cache'\)/, 'debe purgar la cache de API anterior')
 })
