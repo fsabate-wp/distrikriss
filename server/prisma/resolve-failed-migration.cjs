@@ -37,17 +37,29 @@ async function main() {
 
   console.log('-> WARNING: migrate deploy fallo por migracion fallida. Analizando...');
 
-  const status = run(`npx prisma migrate status --schema="${SCHEMA}"`);
-  const statusText = status.output;
-
-  const match = statusText.match(/The `([0-9]+_[a-zA-Z0-9_]+)` migration/);
-  if (!match) {
-    console.error('-> ERROR: no se pudo identificar la migracion fallida.');
-    console.error(statusText);
-    return 1;
+  // Consultar directamente la tabla interna de Prisma en lugar de parsear
+  // la salida de 'migrate status' (que puede variar o contener ANSI codes).
+  const prisma = new PrismaClient();
+  let failedMigration;
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT migration_name
+      FROM _prisma_migrations
+      WHERE started_at IS NOT NULL
+        AND finished_at IS NULL
+        AND rolled_back_at IS NULL
+      ORDER BY started_at DESC
+      LIMIT 1
+    `;
+    if (!rows || rows.length === 0) {
+      console.error('-> ERROR: no se encontro migracion fallida en _prisma_migrations.');
+      return 1;
+    }
+    failedMigration = rows[0].migration_name;
+  } finally {
+    await prisma.$disconnect();
   }
 
-  const failedMigration = match[1];
   console.log(`-> Migracion fallida detectada: ${failedMigration}`);
 
   const migrationFile = path.join('server/prisma/migrations', failedMigration, 'migration.sql');
@@ -74,7 +86,7 @@ async function main() {
     return 1;
   }
 
-  const prisma = new PrismaClient();
+  const prisma2 = new PrismaClient();
   try {
     let allExist = true;
     let noneExist = true;
@@ -83,7 +95,7 @@ async function main() {
       for (const m of createMatches) {
         const table = m[1];
         console.log(`   Verificando tabla ${table}...`);
-        const result = await prisma.$queryRaw(
+        const result = await prisma2.$queryRaw(
           Prisma.sql`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${table}`
         );
         if (result.length > 0) {
@@ -97,7 +109,7 @@ async function main() {
         const table = m[1];
         const column = m[2];
         console.log(`   Verificando columna ${table}.${column}...`);
-        const result = await prisma.$queryRaw(
+        const result = await prisma2.$queryRaw(
           Prisma.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}`
         );
         if (result.length > 0) {
@@ -131,7 +143,7 @@ async function main() {
       return 1;
     }
   } finally {
-    await prisma.$disconnect();
+    await prisma2.$disconnect();
   }
 
   console.log('-> Reintentando migrate deploy...');
