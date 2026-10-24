@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
  */
 const entrada = fs.readFileSync(fileURLToPath(new URL('../entrypoint.sh', import.meta.url)), 'utf8')
 const resolver = fs.readFileSync(
-  fileURLToPath(new URL('../prisma/resolve-failed-migration.js', import.meta.url)),
+  fileURLToPath(new URL('../prisma/resolve-failed-migration.cjs', import.meta.url)),
   'utf8'
 )
 
@@ -41,7 +41,7 @@ test('el script de resolucion verifica el esquema antes de migrate resolve', () 
 test('el arranque delega la migracion en el script de resolucion', () => {
   assert.match(
     entrada,
-    /node server\/prisma\/resolve-failed-migration\.js/,
+    /node server\/prisma\/resolve-failed-migration\.cjs/,
     'debe invocar el script de resolucion'
   )
 })
@@ -49,7 +49,7 @@ test('el arranque delega la migracion en el script de resolucion', () => {
 test('si las migraciones fallan, el arranque se detiene', () => {
   assert.match(
     entrada,
-    /if ! node server\/prisma\/resolve-failed-migration\.js/,
+    /if ! node server\/prisma\/resolve-failed-migration\.cjs/,
     'debe comprobar el resultado del script de migracion'
   )
   // Tras el fallo no debe seguir arrancando la API: tiene que salir con error.

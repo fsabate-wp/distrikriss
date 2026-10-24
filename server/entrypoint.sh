@@ -51,7 +51,7 @@ const p = new PrismaClient();
 # otro tipo de fallo detiene el arranque para revision manual.
 # ---------------------------------------------------------------------------
 echo "-> aplicando migraciones de Prisma"
-if ! node server/prisma/resolve-failed-migration.js; then
+if ! node server/prisma/resolve-failed-migration.cjs; then
   echo "-> ERROR: no se pudieron aplicar las migraciones. Abortando."
   exit 1
 fi
