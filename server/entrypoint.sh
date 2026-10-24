@@ -40,25 +40,19 @@ const p = new PrismaClient();
 # ---------------------------------------------------------------------------
 # Aplicar las migraciones.
 #
-# Antes, si `migrate deploy` fallaba por cualquier motivo (una conexion a medias,
-# un drift, una migracion a medio aplicar) el script caia a
-# `db push --accept-data-loss`, que "arregla" el esquema BORRANDO columnas y
-# tablas con datos, y ademas arrancaba la API aunque el push tambien fallara. Un
-# fallo de despliegue se convertia en perdida silenciosa de datos.
+# Si `migrate deploy` falla con P3009 (migracion fallida en la base), el script
+# de resolucion auto-detecta la migracion, verifica si sus cambios ya existen
+# en el esquema (CREATE TABLE / ADD COLUMN) y marca la migracion como aplicada
+# o rollback segun corresponda. Luego reintenta `migrate deploy`.
 #
-# Ahora un fallo detiene el arranque: es preferible que el contenedor no levante
-# y alguien mire las migraciones, a que la tienda siga vendiendo con el esquema a
-# medias o con datos borrados. Para inspeccionar el estado:
-#   npx prisma migrate status --schema=server/prisma/schema.prisma
-#
-# Tampoco se marca la migracion inicial como aplicada a ciegas: eso hacia que en
-# una base nueva `migrate deploy` saltara el init y fallara con las siguientes.
+# Esto evita que un reinicio del contenedor a mitad de una migracion deje la
+# base bloqueada para siempre, sin recurrir a `db push --accept-data-loss`.
+# Solo se auto-resuelven migraciones de CREATE TABLE o ADD COLUMN; cualquier
+# otro tipo de fallo detiene el arranque para revision manual.
 # ---------------------------------------------------------------------------
 echo "-> aplicando migraciones de Prisma"
-if ! npx prisma migrate deploy --schema="$SCHEMA"; then
-  echo "-> ERROR: 'migrate deploy' fallo. No se arranca con un esquema desconocido."
-  echo "->        Revisa: npx prisma migrate status --schema=$SCHEMA"
-  echo "->        NO se ejecuta 'db push --accept-data-loss': borraria datos."
+if ! node server/prisma/resolve-failed-migration.js; then
+  echo "-> ERROR: no se pudieron aplicar las migraciones. Abortando."
   exit 1
 fi
 

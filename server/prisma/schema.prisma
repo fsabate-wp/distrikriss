@@ -213,7 +213,7 @@ model Settings {
   deliveryDays              Json
   openHours                 Json
   slots                     Json
-bankTransfer Json
+  bankTransfer            Json
   // Datos bancarios cifrados en reposo (AES-256-GCM, misma clave que el
   // certificado). Se expone al cliente solo cuando hay transferencia habilitada.
   bankTransferEnc         String   @default("")
