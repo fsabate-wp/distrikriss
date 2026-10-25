@@ -4,6 +4,7 @@ const path = require('path');
 const { PrismaClient, Prisma } = require('@prisma/client');
 
 const SCHEMA = 'server/prisma/schema.prisma';
+const MIGRATIONS_DIR = 'server/prisma/migrations';
 
 function run(cmd) {
   try {
@@ -21,167 +22,289 @@ function run(cmd) {
 }
 
 /**
- * Extrae todos los objetos que crea una migracion SQL:
- * - CREATE TYPE name
- * - CREATE TABLE name
- * - ALTER TABLE table ADD COLUMN column
+ * Ejecuta el SQL de una migracion de forma idempotente.
+ * Devuelve true si se pudo ejecutar todo, false si hay un error no manejable.
  */
-function extractObjects(sql) {
-  const types = [];
-  const tables = [];
-  const columns = [];
+async function executeMigrationIdempotent(prisma, migrationSql, migrationName) {
+  console.log(`   Ejecutando SQL de forma idempotente...`);
 
-  // CREATE TYPE "Name" AS ENUM ...
-  const typeRegex = /CREATE TYPE\s+"([^"]+)"\s+AS\s+ENUM/gi;
-  let m;
-  while ((m = typeRegex.exec(sql)) !== null) {
-    types.push(m[1]);
+  // Dividir en statements individuales (separados por ; al final de linea)
+  const statements = migrationSql
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => s.length > 0 && !s.startsWith('--'));
+
+  for (const stmt of statements) {
+    const lower = stmt.toLowerCase();
+
+    // CREATE TABLE -> IF NOT EXISTS
+    if (lower.startsWith('create table')) {
+      const tableMatch = stmt.match(/create table\s+"?([a-zA-Z0-9_]+)"?/i);
+      if (tableMatch) {
+        const tableName = tableMatch[1];
+        const exists = await prisma.$queryRaw(
+          Prisma.sql`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${tableName}`
+        );
+        if (exists.length > 0) {
+          console.log(`      tabla ${tableName} ya existe, saltando`);
+          continue;
+        }
+      }
+    }
+
+    // CREATE TYPE -> capturar error si ya existe
+    if (lower.startsWith('create type')) {
+      const typeMatch = stmt.match(/create type\s+"?([a-zA-Z0-9_]+)"?/i);
+      if (typeMatch) {
+        const typeName = typeMatch[1];
+        const exists = await prisma.$queryRaw`
+          SELECT 1 FROM pg_type WHERE typname = ${typeName}
+        `;
+        if (exists.length > 0) {
+          console.log(`      tipo ${typeName} ya existe, saltando`);
+          continue;
+        }
+      }
+    }
+
+    // ALTER TABLE ADD COLUMN -> IF NOT EXISTS
+    if (lower.includes('add column') && !lower.includes('if not exists')) {
+      const colMatch = stmt.match(/alter table\s+"?([a-zA-Z0-9_]+)"?\s+add column\s+"?([a-zA-Z0-9_]+)"?/i);
+      if (colMatch) {
+        const tableName = colMatch[1];
+        const colName = colMatch[2];
+        const exists = await prisma.$queryRaw(
+          Prisma.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName} AND column_name = ${colName}`
+        );
+        if (exists.length > 0) {
+          console.log(`      columna ${tableName}.${colName} ya existe, saltando`);
+          continue;
+        }
+      }
+    }
+
+    // ALTER COLUMN TYPE -> verificar tipo actual
+    if (lower.includes('alter column') && lower.includes('type')) {
+      const typeMatch = stmt.match(/alter table\s+"?([a-zA-Z0-9_]+)"?\s+alter column\s+"?([a-zA-Z0-9_]+)"?\s+type\s+([a-zA-Z0-9_()]+)/i);
+      if (typeMatch) {
+        const tableName = typeMatch[1];
+        const colName = typeMatch[2];
+        const targetType = typeMatch[3].toLowerCase().replace(/\(.*\)/, '');
+
+        const colInfo = await prisma.$queryRaw(
+          Prisma.sql`SELECT data_type, udt_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName} AND column_name = ${colName}`
+        );
+        if (colInfo.length > 0) {
+          const currentType = colInfo[0].udt_name.toLowerCase();
+          if (currentType === targetType) {
+            console.log(`      ${tableName}.${colName} ya es ${targetType}, saltando`);
+            continue;
+          }
+        }
+      }
+    }
+
+    // CREATE INDEX -> IF NOT EXISTS
+    if (lower.startsWith('create index') || lower.startsWith('create unique index')) {
+      const idxMatch = stmt.match(/create (?:unique )?index\s+"?([a-zA-Z0-9_]+)"?/i);
+      if (idxMatch) {
+        const idxName = idxMatch[1];
+        const exists = await prisma.$queryRaw(
+          Prisma.sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = ${idxName}`
+        );
+        if (exists.length > 0) {
+          console.log(`      indice ${idxName} ya existe, saltando`);
+          continue;
+        }
+      }
+    }
+
+    // DROP COLUMN -> IF EXISTS
+    if (lower.includes('drop column') && !lower.includes('if exists')) {
+      const dropMatch = stmt.match(/alter table\s+"?([a-zA-Z0-9_]+)"?\s+drop column\s+"?([a-zA-Z0-9_]+)"?/i);
+      if (dropMatch) {
+        const tableName = dropMatch[1];
+        const colName = dropMatch[2];
+        const exists = await prisma.$queryRaw(
+          Prisma.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName} AND column_name = ${colName}`
+        );
+        if (exists.length === 0) {
+          console.log(`      columna ${tableName}.${colName} ya no existe, saltando DROP`);
+          continue;
+        }
+      }
+    }
+
+    // ALTER TABLE ALTER COLUMN DROP NOT NULL -> verificar
+    if (lower.includes('alter column') && lower.includes('drop not null')) {
+      const colMatch = stmt.match(/alter table\s+"?([a-zA-Z0-9_]+)"?\s+alter column\s+"?([a-zA-Z0-9_]+)"?\s+drop not null/i);
+      if (colMatch) {
+        const tableName = colMatch[1];
+        const colName = colMatch[2];
+        const colInfo = await prisma.$queryRaw(
+          Prisma.sql`SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName} AND column_name = ${colName}`
+        );
+        if (colInfo.length > 0 && colInfo[0].is_nullable === 'YES') {
+          console.log(`      ${tableName}.${colName} ya es nullable, saltando`);
+          continue;
+        }
+      }
+    }
+
+    // Ejecutar el statement
+    try {
+      await prisma.$executeRawUnsafe(stmt);
+    } catch (e) {
+      // Ignorar errores de "ya existe" que no capturamos arriba
+      if (e.message.includes('already exists') || e.message.includes('duplicate')) {
+        console.log(`      objeto ya existe (error capturado): ${stmt.substring(0, 80)}...`);
+        continue;
+      }
+      console.error(`      ERROR ejecutando: ${stmt.substring(0, 120)}...`);
+      console.error(`      ${e.message}`);
+      return false;
+    }
   }
 
-  // CREATE TABLE "Name" (
-  const tableRegex = /CREATE TABLE\s+"([^"]+)"\s*\(/gi;
-  while ((m = tableRegex.exec(sql)) !== null) {
-    tables.push(m[1]);
+  console.log('   SQL ejecutado correctamente');
+  return true;
+}
+
+/**
+ * Verifica si una migracion ya fue realmente aplicada mirando sus objetos principales.
+ * Devuelve true si la migracion parece aplicada, false si falta algo.
+ */
+async function isMigrationReallyApplied(prisma, migrationSql, migrationName) {
+  // Extraer objetos principales
+  const types = [...migrationSql.matchAll(/CREATE TYPE\s+"?([a-zA-Z0-9_]+)"?/gi)].map(m => m[1]);
+  const tables = [...migrationSql.matchAll(/CREATE TABLE\s+"?([a-zA-Z0-9_]+)"?/gi)].map(m => m[1]);
+  const columns = [...migrationSql.matchAll(/ALTER TABLE\s+"?([a-zA-Z0-9_]+)"?\s+ADD COLUMN\s+"?([a-zA-Z0-9_]+)"?/gi)].map(m => ({ table: m[1], column: m[2] }));
+
+  // Verificar types
+  for (const typeName of types) {
+    const exists = await prisma.$queryRaw`SELECT 1 FROM pg_type WHERE typname = ${typeName}`;
+    if (exists.length === 0) {
+      console.log(`   falta TYPE ${typeName}`);
+      return false;
+    }
   }
 
-  // ALTER TABLE "Table" ADD COLUMN "column" ...
-  // Soporta: ADD COLUMN "col" ..., ADD COLUMN     "col" ..., ADD COLUMN "col""type" ..., etc.
-  const addColRegex = /ALTER TABLE\s+"([^"]+)"\s+ADD COLUMN\s+"?([a-zA-Z0-9_]+)"?/gi;
-  while ((m = addColRegex.exec(sql)) !== null) {
-    columns.push({ table: m[1], column: m[2] });
+  // Verificar tables
+  for (const tableName of tables) {
+    const exists = await prisma.$queryRaw(
+      Prisma.sql`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${tableName}`
+    );
+    if (exists.length === 0) {
+      console.log(`   falta TABLE ${tableName}`);
+      return false;
+    }
   }
 
-  return { types, tables, columns };
+  // Verificar columns
+  for (const { table, column } of columns) {
+    const exists = await prisma.$queryRaw(
+      Prisma.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}`
+    );
+    if (exists.length === 0) {
+      console.log(`   falta COLUMN ${table}.${column}`);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function main() {
-  console.log('-> aplicando migraciones de Prisma');
+  console.log('-> verificando migraciones de Prisma');
 
-  let deploy = run(`npx prisma migrate deploy --schema="${SCHEMA}"`);
-  if (deploy.success) {
-    console.log('-> migraciones aplicadas correctamente');
-    return 0;
-  }
+  // 1. Obtener todas las migraciones del disco
+  const migrationDirs = fs.readdirSync(MIGRATIONS_DIR)
+    .filter(d => fs.statSync(path.join(MIGRATIONS_DIR, d)).isDirectory())
+    .sort();
 
-  const fullOutput = deploy.output;
-  if (!fullOutput.includes('P3009')) {
-    console.error('-> ERROR: no es un error de migracion fallida (P3009). Abortando.');
-    return 1;
-  }
+  console.log(`   ${migrationDirs.length} migraciones en disco`);
 
-  console.log('-> WARNING: migrate deploy fallo por migracion fallida. Analizando...');
-
-  // 1. Detectar la migracion fallida consultando _prisma_migrations
   const prisma = new PrismaClient();
-  let failedMigration;
+
   try {
-    const rows = await prisma.$queryRaw`
-      SELECT migration_name
-      FROM _prisma_migrations
-      WHERE started_at IS NOT NULL
-        AND finished_at IS NULL
-        AND rolled_back_at IS NULL
-      ORDER BY started_at DESC
-      LIMIT 1
+    // 2. Obtener migraciones ya aplicadas segun _prisma_migrations
+    const applied = await prisma.$queryRaw`
+      SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL
     `;
-    if (!rows || rows.length === 0) {
-      console.error('-> ERROR: no se encontro migracion fallida en _prisma_migrations.');
+    const appliedSet = new Set(applied.map(m => m.migration_name));
+
+    // 3. Obtener migraciones fallidas
+    const failed = await prisma.$queryRaw`
+      SELECT migration_name FROM _prisma_migrations
+      WHERE started_at IS NOT NULL AND finished_at IS NULL AND rolled_back_at IS NULL
+    `;
+    const failedSet = new Set(failed.map(m => m.migration_name));
+
+    console.log(`   ${appliedSet.size} aplicadas, ${failedSet.size} fallidas segun Prisma`);
+
+    // 4. Para cada migracion, verificar si realmente se aplico
+    const migrationsToFix = [];
+    for (const dir of migrationDirs) {
+      const migrationFile = path.join(MIGRATIONS_DIR, dir, 'migration.sql');
+      if (!fs.existsSync(migrationFile)) continue;
+
+      const sql = fs.readFileSync(migrationFile, 'utf-8');
+      const isApplied = appliedSet.has(dir);
+      const isFailed = failedSet.has(dir);
+
+      if (isFailed) {
+        console.log(`-> Migracion fallida: ${dir}`);
+        migrationsToFix.push({ name: dir, sql, action: 'execute' });
+        continue;
+      }
+
+      if (isApplied) {
+        // Verificar si realmente se aplico
+        const reallyApplied = await isMigrationReallyApplied(prisma, sql, dir);
+        if (!reallyApplied) {
+          console.log(`-> Migracion marcada como applied pero falta SQL: ${dir}`);
+          migrationsToFix.push({ name: dir, sql, action: 'execute' });
+        }
+        continue;
+      }
+
+      // Migracion no aplicada ni fallida: se aplicara con migrate deploy despues
+    }
+
+    // 5. Ejecutar SQL faltante y marcar como applied
+    for (const { name, sql } of migrationsToFix) {
+      console.log(`-> Reparando: ${name}`);
+      const ok = await executeMigrationIdempotent(prisma, sql, name);
+      if (!ok) {
+        console.error(`-> ERROR: no se pudo ejecutar el SQL de ${name}. Abortando.`);
+        return 1;
+      }
+
+      // Marcar como applied si no lo esta ya
+      if (!appliedSet.has(name)) {
+        console.log(`   Marcando como aplicada...`);
+        const resolve = run(`npx prisma migrate resolve --applied "${name}" --schema="${SCHEMA}"`);
+        if (!resolve.success) {
+          console.error('-> ERROR: migrate resolve --applied fallo.');
+          return 1;
+        }
+      }
+    }
+
+    // 6. Aplicar migraciones restantes con migrate deploy
+    console.log('-> Aplicando migraciones restantes con migrate deploy...');
+    const deploy = run(`npx prisma migrate deploy --schema="${SCHEMA}"`);
+    if (!deploy.success) {
+      console.error('-> ERROR: migrate deploy fallo.');
       return 1;
     }
-    failedMigration = rows[0].migration_name;
+
+    console.log('-> Todas las migraciones estan aplicadas correctamente');
+    return 0;
+
   } finally {
     await prisma.$disconnect();
   }
-
-  console.log(`-> Migracion fallida detectada: ${failedMigration}`);
-
-  const migrationFile = path.join('server/prisma/migrations', failedMigration, 'migration.sql');
-  if (!fs.existsSync(migrationFile)) {
-    console.error(`-> ERROR: no se encontro ${migrationFile}`);
-    return 1;
-  }
-
-  const sql = fs.readFileSync(migrationFile, 'utf-8');
-  const objects = extractObjects(sql);
-
-  console.log(`   Objetos en la migracion: ${objects.types.length} types, ${objects.tables.length} tables, ${objects.columns.length} columns`);
-
-  if (objects.types.length === 0 && objects.tables.length === 0 && objects.columns.length === 0) {
-    console.error('-> ERROR: la migracion no contiene CREATE TYPE, CREATE TABLE ni ADD COLUMN. No se auto-resuelve.');
-    return 1;
-  }
-
-  // 2. Verificar que existan en la base de datos
-  const prisma2 = new PrismaClient();
-  const missing = [];
-  try {
-    for (const typeName of objects.types) {
-      const result = await prisma2.$queryRaw`
-        SELECT 1 FROM pg_type WHERE typname = ${typeName}
-      `;
-      if (result.length === 0) {
-        missing.push(`TYPE ${typeName}`);
-      }
-    }
-
-    for (const tableName of objects.tables) {
-      const result = await prisma2.$queryRaw(
-        Prisma.sql`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${tableName}`
-      );
-      if (result.length === 0) {
-        missing.push(`TABLE ${tableName}`);
-      }
-    }
-
-    for (const { table, column } of objects.columns) {
-      const result = await prisma2.$queryRaw(
-        Prisma.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}`
-      );
-      if (result.length === 0) {
-        missing.push(`COLUMN ${table}.${column}`);
-      }
-    }
-  } finally {
-    await prisma2.$disconnect();
-  }
-
-  // 3. Decidir la accion
-  if (missing.length === 0) {
-    console.log('-> Todos los objetos de la migracion existen. Marcando como aplicada...');
-    const resolve = run(
-      `npx prisma migrate resolve --applied "${failedMigration}" --schema="${SCHEMA}"`
-    );
-    if (!resolve.success) {
-      console.error('-> ERROR: migrate resolve --applied fallo.');
-      return 1;
-    }
-  } else if (missing.length === objects.types.length + objects.tables.length + objects.columns.length) {
-    console.log('-> Ningun objeto de la migracion existe. Marcando como rollback...');
-    const resolve = run(
-      `npx prisma migrate resolve --rolled-back "${failedMigration}" --schema="${SCHEMA}"`
-    );
-    if (!resolve.success) {
-      console.error('-> ERROR: migrate resolve --rolled-back fallo.');
-      return 1;
-    }
-  } else {
-    console.error('-> ERROR: estado parcial. Algunos objetos existen y otros no:');
-    for (const item of missing) {
-      console.error(`   FALTA: ${item}`);
-    }
-    console.error('-> Requiere intervencion manual.');
-    return 1;
-  }
-
-  console.log('-> Reintentando migrate deploy...');
-  deploy = run(`npx prisma migrate deploy --schema="${SCHEMA}"`);
-  if (!deploy.success) {
-    console.error('-> ERROR: migrate deploy fallo de nuevo despues de resolver.');
-    return 1;
-  }
-
-  console.log('-> migraciones aplicadas correctamente tras reparacion');
-  return 0;
 }
 
 main()
